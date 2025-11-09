@@ -43,20 +43,73 @@ const generateUniqueCode = async () => {
   return code
 }
 
+// Download code helpers
+const isDownloadCodeUnique = async (code) => {
+  const q = query(collection(db, 'quizzes'), where('downloadCode', '==', code))
+  const querySnapshot = await getDocs(q)
+  return querySnapshot.empty
+}
+
+export const generateUniqueDownloadCode = async () => {
+  let code
+  let isUnique = false
+  while (!isUnique) {
+    code = generateQuizCode()
+    isUnique = await isDownloadCodeUnique(code)
+  }
+  return code
+}
+
+// Build rawJson string per spec
+const buildRawJsonString = (quiz, extras = {}) => {
+  const raw = {
+    quizId: quiz.id || '',
+    title: quiz.title || '',
+    description: quiz.description || '',
+    downloadCode: extras.downloadCode || quiz.downloadCode || '',
+    latencyMinutes: extras.latencyMinutes ?? Math.round((quiz.allowLateUploadSec || 0) / 60),
+    timerMinutes: Math.round((quiz.durationSec || 0) / 60),
+    preForm: {
+      fields: (quiz.preJoinFields || []).map(f => ({ key: f.id || f.key || '', label: f.label || '', required: !!f.required }))
+    },
+    questions: (quiz.questions || []).map(q => ({
+      id: q.id,
+      type: q.type,
+      text: q.text,
+      options: (q.options || []).map(o => o.text ?? o),
+      correct: (q.correct || []).map((_, idx) => idx),
+      weight: Math.round((q.weight || 1))
+    })),
+    allowedJoinCodes: extras.allowedJoinCodes || [],
+    answerViewPassword: extras.answerViewPassword || '',
+    autoDeleteDays: quiz.autoDeleteAfterDays || 7
+  }
+  try { return JSON.stringify(raw) } catch { return '' }
+}
+
 export const createQuiz = async (quizData, creatorId) => {
   try {
     const code = await generateUniqueCode()
+    const downloadCode = await generateUniqueDownloadCode()
     
     const quiz = {
       ...quizData,
       code,
+      downloadCode,
       creatorId,
       createdAt: serverTimestamp(),
       editableUntilStart: true
     }
     
     const docRef = await addDoc(collection(db, 'quizzes'), quiz)
-    return { id: docRef.id, ...quiz }
+    const rawJson = buildRawJsonString({ ...quiz, id: docRef.id }, {
+      downloadCode,
+      allowedJoinCodes: quizData.allowedJoinCodes || [],
+      answerViewPassword: quizData.answerViewPassword || '',
+      latencyMinutes: quizData.latencyMinutes
+    })
+    await updateDoc(doc(db, 'quizzes', docRef.id), { rawJson })
+    return { id: docRef.id, ...quiz, rawJson }
   } catch (error) {
     throw error
   }
@@ -132,6 +185,16 @@ export const updateQuiz = async (quizId, updates) => {
       }
     }
     await updateDoc(docRef, updates)
+    // Rebuild rawJson if fields changed
+    const snap = await getDoc(docRef)
+    const data = snap.data() || {}
+    const rawJson = buildRawJsonString({ ...data, id: quizId }, {
+      downloadCode: data.downloadCode,
+      allowedJoinCodes: updates.allowedJoinCodes || data.allowedJoinCodes || [],
+      answerViewPassword: updates.answerViewPassword || data.answerViewPassword || '',
+      latencyMinutes: updates.latencyMinutes
+    })
+    await updateDoc(docRef, { rawJson })
     return true
   } catch (error) {
     throw error
@@ -234,9 +297,11 @@ export const cloneQuiz = async (sourceQuizId, overrides = {}) => {
     const src = srcSnap.data()
 
     const newCode = await generateUniqueCode()
+    const downloadCode = await generateUniqueDownloadCode()
     const cloned = {
       title: src.title,
       code: newCode,
+      downloadCode,
       // Clone under the current teacher by default; fallback to source creator
       creatorId: auth.currentUser?.uid || src.creatorId,
       createdAt: serverTimestamp(),
@@ -257,7 +322,14 @@ export const cloneQuiz = async (sourceQuizId, overrides = {}) => {
     }
 
     const newRef = await addDoc(collection(db, 'quizzes'), cloned)
-    return { id: newRef.id, ...cloned }
+    const rawJson = buildRawJsonString({ ...cloned, id: newRef.id }, {
+      downloadCode,
+      allowedJoinCodes: overrides.allowedJoinCodes ?? src.allowedJoinCodes ?? [],
+      answerViewPassword: overrides.answerViewPassword ?? src.answerViewPassword ?? '',
+      latencyMinutes: overrides.latencyMinutes ?? src.latencyMinutes
+    })
+    await updateDoc(doc(db, 'quizzes', newRef.id), { rawJson })
+    return { id: newRef.id, ...cloned, rawJson }
   } catch (error) {
     throw error
   }

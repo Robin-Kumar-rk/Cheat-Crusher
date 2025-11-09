@@ -177,7 +177,7 @@ function DashboardPage() {
                         size="small"
                       />
                       <Chip
-                        label={quiz.code}
+                        label={quiz.downloadCode || quiz.code}
                         variant="outlined"
                         size="small"
                       />

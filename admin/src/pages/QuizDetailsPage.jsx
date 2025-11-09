@@ -93,7 +93,7 @@ function QuizDetailsPage() {
   }
 
   const copyQuizCode = () => {
-    navigator.clipboard.writeText(quiz.code)
+    navigator.clipboard.writeText(quiz.downloadCode || quiz.code)
     // You could add a snackbar notification here
   }
 
@@ -175,7 +175,7 @@ function QuizDetailsPage() {
                   color={status.color}
                 />
                 <Chip
-                  label={quiz.code}
+                  label={quiz.downloadCode || quiz.code}
                   variant="outlined"
                   onClick={copyQuizCode}
                   icon={<ShareIcon />}

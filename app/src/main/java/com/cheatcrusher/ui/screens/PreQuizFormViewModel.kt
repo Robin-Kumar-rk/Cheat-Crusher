@@ -19,6 +19,8 @@ data class PreQuizFormUiState(
     val quiz: Quiz? = null,
     val fields: List<FormField> = emptyList(),
     val values: Map<String, String> = emptyMap(),
+    val requiresJoinCode: Boolean = false,
+    val joinCode: String = "",
     val isLoading: Boolean = false,
     val error: String? = null
 )
@@ -41,13 +43,15 @@ class PreQuizFormViewModel @Inject constructor(
       val cached = if (useCachedIfAvailable) offlineRepository.getCachedQuizById(quizId) else null
       val offlineQuiz = cached?.let { offlineRepository.parseCachedQuiz(it) }
       if (offlineQuiz != null) {
-        val initial = if (offlineQuiz.preJoinFields.isNotEmpty()) offlineQuiz.preJoinFields else defaultSchema()
-        val schema = ensureEmail(initial)
+          val initial = if (offlineQuiz.preJoinFields.isNotEmpty()) offlineQuiz.preJoinFields else defaultSchema()
+          val schema = ensureEmail(initial)
           val prefilled = prefillValues(schema)
+          val requiresJoin = requiresJoinCodeFromRaw(offlineQuiz.rawJson)
           _uiState.value = _uiState.value.copy(
             quiz = offlineQuiz,
             fields = schema,
             values = prefilled,
+            requiresJoinCode = requiresJoin,
             isLoading = false
           )
         return@launch
@@ -57,10 +61,12 @@ class PreQuizFormViewModel @Inject constructor(
           val initial = if (quiz.preJoinFields.isNotEmpty()) quiz.preJoinFields else defaultSchema()
           val schema = ensureEmail(initial)
           val prefilled = prefillValues(schema)
+          val requiresJoin = requiresJoinCodeFromRaw(quiz.rawJson)
           _uiState.value = _uiState.value.copy(
             quiz = quiz,
             fields = schema,
             values = prefilled,
+            requiresJoinCode = requiresJoin,
             isLoading = false
           )
         },
@@ -123,6 +129,10 @@ class PreQuizFormViewModel @Inject constructor(
         _uiState.value = _uiState.value.copy(values = newValues)
     }
 
+    fun updateJoinCode(value: String) {
+        _uiState.value = _uiState.value.copy(joinCode = value)
+    }
+
     fun validate(): String? {
         val fields = _uiState.value.fields
         val values = _uiState.value.values
@@ -130,6 +140,11 @@ class PreQuizFormViewModel @Inject constructor(
             if (f.required && (values[f.id].isNullOrBlank())) {
                 return "${f.label} is required"
             }
+        }
+        if (_uiState.value.requiresJoinCode) {
+            val raw = com.cheatcrusher.util.JoinCodeVerifier.parse(_uiState.value.quiz?.rawJson)
+            val result = com.cheatcrusher.util.JoinCodeVerifier.verify(raw, _uiState.value.joinCode)
+            if (!result.ok) return result.error ?: "Invalid join code"
         }
         return null
     }
@@ -178,5 +193,10 @@ class PreQuizFormViewModel @Inject constructor(
         }
         val infoB64 = android.util.Base64.encodeToString(json.toByteArray(), android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP)
         return Result.success(Pair(roll, infoB64))
+    }
+
+    private fun requiresJoinCodeFromRaw(rawJson: String?): Boolean {
+        val raw = com.cheatcrusher.util.JoinCodeVerifier.parse(rawJson)
+        return raw?.allowedJoinCodes?.isNotEmpty() == true
     }
 }

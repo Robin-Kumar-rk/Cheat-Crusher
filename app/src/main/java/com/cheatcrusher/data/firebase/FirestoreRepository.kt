@@ -20,11 +20,20 @@ class FirestoreRepository @Inject constructor(
      */
     suspend fun getQuizByCode(code: String): Result<Quiz> {
         return try {
-            val querySnapshot = firestore.collection("quizzes")
-                .whereEqualTo("code", code.uppercase())
+            var querySnapshot = firestore.collection("quizzes")
+                .whereEqualTo("downloadCode", code.uppercase())
                 .limit(1)
                 .get()
                 .await()
+
+            if (querySnapshot.isEmpty) {
+                // Fallback to legacy field
+                querySnapshot = firestore.collection("quizzes")
+                    .whereEqualTo("code", code.uppercase())
+                    .limit(1)
+                    .get()
+                    .await()
+            }
             
             if (querySnapshot.isEmpty) {
                 Result.failure(Exception("Quiz not found with code: $code"))
@@ -64,6 +73,8 @@ class FirestoreRepository @Inject constructor(
                 Log.d("FirestoreRepository", "Quiz ID: ${quiz.id}")
                 Log.d("FirestoreRepository", "Quiz Title: ${quiz.title}")
                 Log.d("FirestoreRepository", "Quiz Code: ${quiz.code}")
+                Log.d("FirestoreRepository", "Download Code: ${quiz.downloadCode}")
+                Log.d("FirestoreRepository", "Has rawJson: ${quiz.rawJson != null}")
                 Log.d("FirestoreRepository", "Raw document data: ${document.data}")
                 Log.d("FirestoreRepository", "Quiz onAppSwitch policy: ${quiz.onAppSwitch}")
                 Log.d("FirestoreRepository", "=== END QUIZ LOADING DEBUG ===")

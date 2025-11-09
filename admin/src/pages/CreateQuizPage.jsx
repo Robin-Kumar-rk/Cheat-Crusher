@@ -50,7 +50,11 @@ function CreateQuizPage() {
     autoDeleteAfterDays: 7,
     editableUntilStart: true,
     preJoinFields: [],
-    questions: []
+    questions: [],
+    // New spec extras
+    allowedJoinCodes: [],
+    answerViewPassword: '',
+    latencyMinutes: 15
   })
 
 
@@ -578,3 +582,114 @@ function CreateQuizPage() {
 }
 
 export default CreateQuizPage
+            {/* Join Codes */}
+            <Grid item xs={12}>
+              <Card>
+                <CardContent>
+                  <Typography variant="h6" gutterBottom>
+                    Join Codes
+                  </Typography>
+                  <Alert severity="info" sx={{ mb: 2 }}>
+                    Add unlock passwords and allowed start times. Students will join using "password|startTime".
+                  </Alert>
+                  {(quizData.allowedJoinCodes || []).map((jc, idx) => (
+                    <Box key={idx} sx={{ mb: 2 }}>
+                      <Grid container spacing={2}>
+                        <Grid item xs={12} md={4}>
+                          <TextField
+                            fullWidth
+                            label="Unlock Password"
+                            value={jc.unlockPassword}
+                            onChange={(e) => {
+                              const value = e.target.value
+                              setQuizData(prev => ({
+                                ...prev,
+                                allowedJoinCodes: prev.allowedJoinCodes.map((it, i) => i === idx ? { ...it, unlockPassword: value } : it)
+                              }))
+                            }}
+                          />
+                        </Grid>
+                        <Grid item xs={12} md={8}>
+                          <Typography variant="body2" sx={{ mb: 1 }}>Allowed Start Times</Typography>
+                          {(jc.allowedStartTimes || []).map((ts, tIdx) => (
+                            <Box key={tIdx} sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                              <DateTimePicker
+                                label={`Start ${tIdx + 1}`}
+                                value={new Date(ts)}
+                                onChange={(value) => {
+                                  const iso = value?.toISOString() || ''
+                                  setQuizData(prev => ({
+                                    ...prev,
+                                    allowedJoinCodes: prev.allowedJoinCodes.map((it, i) => i === idx ? { ...it, allowedStartTimes: it.allowedStartTimes.map((s, si) => si === tIdx ? iso : s) } : it)
+                                  }))
+                                }}
+                              />
+                              <IconButton onClick={() => {
+                                setQuizData(prev => ({
+                                  ...prev,
+                                  allowedJoinCodes: prev.allowedJoinCodes.map((it, i) => i === idx ? { ...it, allowedStartTimes: it.allowedStartTimes.filter((_, si) => si !== tIdx) } : it)
+                                }))
+                              }}>
+                                <DeleteIcon />
+                              </IconButton>
+                            </Box>
+                          ))}
+                          <Button variant="outlined" onClick={() => {
+                            setQuizData(prev => ({
+                              ...prev,
+                              allowedJoinCodes: prev.allowedJoinCodes.map((it, i) => i === idx ? { ...it, allowedStartTimes: [...(it.allowedStartTimes || []), new Date().toISOString()] } : it)
+                            }))
+                          }}>Add Start Time</Button>
+                        </Grid>
+                      </Grid>
+                      <Box sx={{ mt: 1 }}>
+                        <Button color="error" onClick={() => {
+                          setQuizData(prev => ({
+                            ...prev,
+                            allowedJoinCodes: prev.allowedJoinCodes.filter((_, i) => i !== idx)
+                          }))
+                        }}>Remove Join Code</Button>
+                      </Box>
+                      <Divider sx={{ my: 2 }} />
+                    </Box>
+                  ))}
+                  <Box sx={{ display: 'flex', gap: 2 }}>
+                    <Button variant="outlined" startIcon={<AddIcon />} onClick={() => {
+                      setQuizData(prev => ({
+                        ...prev,
+                        allowedJoinCodes: [...(prev.allowedJoinCodes || []), { unlockPassword: '', allowedStartTimes: [] }]
+                      }))
+                    }}>Add Join Code</Button>
+                    <TextField
+                      label="Latency Minutes"
+                      type="number"
+                      value={quizData.latencyMinutes}
+                      onChange={(e) => handleInputChange('latencyMinutes', parseInt(e.target.value || '0'))}
+                    />
+                  </Box>
+                </CardContent>
+              </Card>
+            </Grid>
+
+            {/* Answer View Password */}
+            <Grid item xs={12}>
+              <Card>
+                <CardContent>
+                  <Typography variant="h6" gutterBottom>
+                    Answer View Password
+                  </Typography>
+                  <Box sx={{ display: 'flex', gap: 2 }}>
+                    <TextField
+                      fullWidth
+                      label="Password"
+                      value={quizData.answerViewPassword}
+                      onChange={(e) => handleInputChange('answerViewPassword', e.target.value)}
+                    />
+                    <Button variant="outlined" onClick={() => {
+                      const rand = Math.random().toString(36).substring(2, 8).toUpperCase()
+                      handleInputChange('answerViewPassword', `ANS-${rand}`)
+                    }}>Generate</Button>
+                  </Box>
+                </CardContent>
+              </Card>
+            </Grid>

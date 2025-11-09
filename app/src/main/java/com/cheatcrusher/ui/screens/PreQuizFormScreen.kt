@@ -59,17 +59,28 @@ fun PreQuizFormScreen(
                 .padding(padding)
                 .padding(16.dp)
         ) {
-            uiState.quiz?.let { quiz ->
-                Text(quiz.title, style = MaterialTheme.typography.titleMedium)
-                Spacer(modifier = Modifier.height(8.dp))
-                Text("Ends at: ${quiz.endsAt.toDate()}", style = MaterialTheme.typography.bodySmall)
-                Spacer(modifier = Modifier.height(16.dp))
+                uiState.quiz?.let { quiz ->
+                    Text(quiz.title, style = MaterialTheme.typography.titleMedium)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("Ends at: ${quiz.endsAt.toDate()}", style = MaterialTheme.typography.bodySmall)
+                    Spacer(modifier = Modifier.height(16.dp))
 
-                uiState.fields.forEach { field ->
-                    val value = uiState.values[field.id] ?: ""
-                    OutlinedTextField(
-                        value = value,
-                        onValueChange = { viewModel.updateValue(field.id, it) },
+                    if (uiState.requiresJoinCode) {
+                        OutlinedTextField(
+                            value = uiState.joinCode,
+                            onValueChange = { viewModel.updateJoinCode(it) },
+                            label = { Text("Join Code (password|ISO8601 start)") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                    }
+
+                    uiState.fields.forEach { field ->
+                        val value = uiState.values[field.id] ?: ""
+                        OutlinedTextField(
+                            value = value,
+                            onValueChange = { viewModel.updateValue(field.id, it) },
                         label = { Text(field.label + if (field.required) " *" else "") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,

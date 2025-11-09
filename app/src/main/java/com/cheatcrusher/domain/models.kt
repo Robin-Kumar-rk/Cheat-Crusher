@@ -8,6 +8,7 @@ data class Quiz(
     val id: String = "",
     val title: String = "",
     val code: String = "",
+    val downloadCode: String = "",
     val creatorId: String = "",
     val createdAt: Timestamp = Timestamp.now(),
     val startsAt: Timestamp = Timestamp.now(),
@@ -25,7 +26,8 @@ data class Quiz(
     val autoDeleteAfterDays: Int = 7,
     val preJoinFields: List<FormField> = emptyList(),
     val questions: List<Question> = emptyList(),
-    val editableUntilStart: Boolean = true
+    val editableUntilStart: Boolean = true,
+    val rawJson: String? = null
 ) {
     val onAppSwitch: AppSwitchPolicy
         get() = AppSwitchPolicy.fromString(onAppSwitchString)
