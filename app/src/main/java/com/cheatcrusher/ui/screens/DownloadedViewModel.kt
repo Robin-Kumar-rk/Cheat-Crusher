@@ -18,7 +18,8 @@ data class DownloadedItem(
     val cached: CachedQuiz,
     val secondsUntilStart: Long,
     val isActive: Boolean,
-    val isAttempted: Boolean
+    val isAttempted: Boolean,
+    val ansCode: String?
 )
 
 data class DownloadedUiState(
@@ -39,13 +40,19 @@ class DownloadedViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
             try {
+                // Rehydrate cached quizzes from local storage if DB is empty
+                val existing = offlineRepository.listCachedQuizzes()
+                if (existing.isEmpty()) {
+                    offlineRepository.rehydrateCachedFromFiles()
+                }
                 val cached = offlineRepository.listCachedQuizzes()
                 val history = localRepository.listHistory()
                 val pending = offlineRepository.listPendingSubmissions()
                 val attemptedIds = (history.map { it.quizId } + pending.map { it.quizId }).toSet()
                 val items = cached.map { c ->
                     val isAttempted = attemptedIds.contains(c.quizId)
-                    DownloadedItem(cached = c, secondsUntilStart = 0L, isActive = true, isAttempted = isAttempted)
+                    val savedAns = offlineRepository.readAnswerCode(c.quizId)
+                    DownloadedItem(cached = c, secondsUntilStart = 0L, isActive = true, isAttempted = isAttempted, ansCode = savedAns)
                 }
                 _uiState.value = DownloadedUiState(items = items, isLoading = false)
             } catch (e: Exception) {
@@ -58,6 +65,18 @@ class DownloadedViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 offlineRepository.deleteCachedQuiz(quizId)
+                refresh()
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(error = e.message)
+            }
+        }
+    }
+
+    fun setAnswerCode(quizId: String, code: String) {
+        viewModelScope.launch {
+            try {
+                offlineRepository.saveAnswerCode(quizId, code)
+                // Refresh item to reflect saved code
                 refresh()
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(error = e.message)

@@ -24,7 +24,7 @@ fun ResultScreen(
     viewModel: ResultViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    var answerPassword by remember { mutableStateOf("") }
+    var answerPassword by remember(uiState.savedAnsCode) { mutableStateOf(uiState.savedAnsCode ?: "") }
     var canViewAnswers by remember { mutableStateOf(false) }
     
     LaunchedEffect(responseId) {
@@ -173,6 +173,13 @@ fun ResultScreen(
         uiState.quiz?.let { quiz ->
             val raw = com.cheatcrusher.util.JoinCodeVerifier.parse(quiz.rawJson)
             if (raw?.answerViewPassword != null) {
+                // Auto-unlock if saved code matches
+                LaunchedEffect(uiState.savedAnsCode) {
+                    val saved = uiState.savedAnsCode
+                    if (!saved.isNullOrBlank() && saved == raw.answerViewPassword) {
+                        canViewAnswers = true
+                    }
+                }
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Text("Answer View", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
@@ -185,7 +192,13 @@ fun ResultScreen(
                             modifier = Modifier.fillMaxWidth()
                         )
                         Spacer(modifier = Modifier.height(8.dp))
-                        Button(onClick = { canViewAnswers = answerPassword == raw.answerViewPassword }) {
+                        Button(onClick = {
+                            val ok = answerPassword == raw.answerViewPassword
+                            canViewAnswers = ok
+                            if (ok) {
+                                viewModel.saveAnsCode(quiz.id, answerPassword)
+                            }
+                        }) {
                             Text("Unlock Answers")
                         }
                     }

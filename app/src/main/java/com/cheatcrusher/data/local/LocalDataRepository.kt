@@ -30,4 +30,8 @@ class LocalDataRepository @Inject constructor(
     suspend fun listHistory(): List<LocalHistoryItem> = dao.getAllHistory()
 
     suspend fun getStudentProfile(): StudentProfile? = dao.getStudentProfile()
+
+    suspend fun deleteHistoryForQuizAndRoll(quizId: String, rollNumber: String) {
+        dao.deleteHistoryForQuizAndRoll(quizId, rollNumber)
+    }
 }

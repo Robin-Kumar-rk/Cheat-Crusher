@@ -60,10 +60,20 @@ interface LocalDao {
     @Query("SELECT * FROM pending_submissions WHERE responseId = :responseId LIMIT 1")
     suspend fun getPendingByResponseId(responseId: String): PendingSubmission?
 
+    @Query("SELECT * FROM pending_submissions WHERE id = :id LIMIT 1")
+    suspend fun getPendingById(id: Long): PendingSubmission?
+
+    // History management
+    @Query("DELETE FROM local_history WHERE quizId = :quizId AND rollNumber = :roll")
+    suspend fun deleteHistoryForQuizAndRoll(quizId: String, roll: String)
+
     // Student profile
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertStudentProfile(profile: StudentProfile)
 
     @Query("SELECT * FROM student_profile LIMIT 1")
     suspend fun getStudentProfile(): StudentProfile?
+
+    @Query("UPDATE pending_submissions SET studentInfoJson = :studentInfoJson WHERE id = :id")
+    suspend fun updatePendingStudentInfo(id: Long, studentInfoJson: String)
 }

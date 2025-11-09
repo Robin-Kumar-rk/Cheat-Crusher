@@ -62,14 +62,15 @@ fun PreQuizFormScreen(
                 uiState.quiz?.let { quiz ->
                     Text(quiz.title, style = MaterialTheme.typography.titleMedium)
                     Spacer(modifier = Modifier.height(8.dp))
-                    Text("Ends at: ${quiz.endsAt.toDate()}", style = MaterialTheme.typography.bodySmall)
+                    Text("Timer: ${(quiz.durationSec/60)} min • Latency: ${(quiz.allowLateUploadSec/60)} min", style = MaterialTheme.typography.bodySmall)
                     Spacer(modifier = Modifier.height(16.dp))
 
                     if (uiState.requiresJoinCode) {
                         OutlinedTextField(
                             value = uiState.joinCode,
                             onValueChange = { viewModel.updateJoinCode(it) },
-                            label = { Text("Join Code (password|ISO8601 start)") },
+                            label = { Text("Join Code") },
+                            placeholder = { Text("Paste the code provided by teacher") },
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true
                         )

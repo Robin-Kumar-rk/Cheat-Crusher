@@ -11,7 +11,8 @@ import {
   Alert,
   CircularProgress,
   IconButton,
-  Divider
+  Divider,
+  TextField
 } from '@mui/material'
 import {
   ArrowBack as ArrowBackIcon,
@@ -21,6 +22,10 @@ import {
   Share as ShareIcon
 } from '@mui/icons-material'
 import { getQuiz, getQuizResponses, cloneQuiz } from '../services/quizService'
+import { generateJoinCode } from '../utils/joinCode'
+import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker'
+import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider'
+import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns'
 import { exportResponsesAsCSV } from '../utils/csvExport'
 import { format } from 'date-fns'
 
@@ -31,6 +36,9 @@ function QuizDetailsPage() {
   const [responses, setResponses] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [joinStartTime, setJoinStartTime] = useState(new Date())
+  const [generatedJoinCode, setGeneratedJoinCode] = useState('')
+  const [genError, setGenError] = useState('')
 
   useEffect(() => {
     loadQuizData()
@@ -137,14 +145,7 @@ function QuizDetailsPage() {
         <Typography variant="h4" component="h1" sx={{ flexGrow: 1 }}>
           {quiz.title}
         </Typography>
-        <Button
-          variant="outlined"
-          startIcon={<EditIcon />}
-          onClick={() => navigate(`/quiz/${quizId}/edit`)}
-          sx={{ mr: 1 }}
-        >
-          Edit
-        </Button>
+        {/* Edit disabled per spec; only cloning allowed */}
         <Button
           variant="contained"
           startIcon={<PeopleIcon />}
@@ -309,6 +310,60 @@ function QuizDetailsPage() {
             </CardContent>
           </Card>
 
+          {/* Get a Join Code */}
+          <Card sx={{ mt: 2 }}>
+            <CardContent>
+              <Typography variant="h6" gutterBottom>
+                Get a Join Code
+              </Typography>
+              <Typography variant="body2" color="text.secondary" gutterBottom>
+                Select a start time. The join code mixes the unlock password with the time in an unreadable format.
+              </Typography>
+              <LocalizationProvider dateAdapter={AdapterDateFns}>
+                <Grid container spacing={2} sx={{ mt: 1 }}>
+                  <Grid item xs={12}>
+                    <DateTimePicker
+                      label="Select Start Time"
+                      value={joinStartTime}
+                      onChange={(value) => setJoinStartTime(value)}
+                    />
+                  </Grid>
+                  <Grid item xs={12}>
+                    <Button
+                      variant="contained"
+                      onClick={async () => {
+                        try {
+                          setGenError('')
+                          const pwd = quiz.unlockPassword || (quiz.rawJson ? JSON.parse(quiz.rawJson).unlockPassword : '')
+                          const code = await generateJoinCode(pwd, joinStartTime)
+                          setGeneratedJoinCode(code)
+                        } catch (e) {
+                          setGenError(e.message || 'Failed to generate join code')
+                        }
+                      }}
+                    >
+                      Get a Join Code
+                    </Button>
+                  </Grid>
+                </Grid>
+              </LocalizationProvider>
+              {genError && (
+                <Alert severity="error" sx={{ mt: 2 }}>{genError}</Alert>
+              )}
+              {generatedJoinCode && (
+                <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', mt: 2 }}>
+                  <TextField
+                    fullWidth
+                    label="Generated Join Code"
+                    value={generatedJoinCode}
+                    InputProps={{ readOnly: true }}
+                  />
+                  <Button variant="outlined" onClick={() => navigator.clipboard.writeText(generatedJoinCode)}>Copy</Button>
+                </Box>
+              )}
+            </CardContent>
+          </Card>
+
           {/* Data Retention Warning */}
           <Card sx={{ mt: 2 }}>
             <CardContent>
@@ -336,15 +391,6 @@ function QuizDetailsPage() {
                 Actions
               </Typography>
               <Grid container spacing={2}>
-                <Grid item>
-                  <Button
-                    variant="contained"
-                    startIcon={<EditIcon />}
-                    onClick={() => navigate(`/quiz/${quiz.id}/edit`)}
-                  >
-                    Edit
-                  </Button>
-                </Grid>
                 <Grid item>
                   <Button
                     variant="outlined"

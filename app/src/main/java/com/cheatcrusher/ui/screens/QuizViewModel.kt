@@ -1,6 +1,5 @@
 package com.cheatcrusher.ui.screens
 
-import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.cheatcrusher.data.firebase.FirestoreRepository
@@ -27,6 +26,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+import android.util.Log
 
 data class QuizUiState(
     val quiz: Quiz? = null,
@@ -58,6 +58,7 @@ class QuizViewModel @Inject constructor(
     private var timerJob: Job? = null
     private var currentResponseId: String? = null
     private var currentRollNumber: String? = null
+    private var currentStudentInfo: Map<String, String> = emptyMap()
     private var submissionStarted: Boolean = false
     
     fun loadQuiz(quizId: String, rollNumber: String, studentInfo: Map<String, String> = emptyMap()) {
@@ -65,28 +66,63 @@ class QuizViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
             currentRollNumber = normalizedRoll
+            Log.d("QuizViewModel", "Loading quiz=$quizId for roll=$normalizedRoll")
+            currentStudentInfo = studentInfo
             
+            // Block joining if Automatic date & time is disabled
+            if (!TimeIntegrity.isAutoTimeEnabled(context)) {
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = "Automatic date & time must be enabled to join"
+                )
+                Log.w("QuizViewModel", "Auto time disabled: preventing quiz join")
+                return@launch
+            }
+
             try {
-                // Offline-first: load cached quiz and parse
-                val cached = offlineRepository.getCachedQuizById(quizId)
-                val quiz = cached?.let { offlineRepository.parseCachedQuiz(it) }
-                if (quiz == null) {
-                    _uiState.value = _uiState.value.copy(isLoading = false, error = "Quiz not downloaded. Enter download code first.")
+                // Server-first: fetch from Firestore to honor latest policies (e.g., disqualify)
+                var quiz: Quiz? = null
+                val remote = firestoreRepository.getQuizById(quizId)
+                remote.fold(
+                    onSuccess = { fetched -> quiz = fetched },
+                    onFailure = { e ->
+                        Log.w("QuizViewModel", "Remote fetch failed; trying offline cache", e)
+                        val cached = offlineRepository.getCachedQuizById(quizId)
+                        quiz = cached?.let { offlineRepository.parseCachedQuiz(it) }
+                        if (quiz == null) {
+                            _uiState.value = _uiState.value.copy(
+                                isLoading = false,
+                                error = e.message ?: "Quiz not available. Please enter download code first."
+                            )
+                            return@launch
+                        }
+                    }
+                )
+
+                val resolvedQuiz = quiz ?: run {
+                    Log.e("QuizViewModel", "Quiz resolution failed; neither cache nor Firestore provided a quiz")
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        error = "Quiz not available. Please enter download code first."
+                    )
                     return@launch
                 }
 
-                val shuffledQuestions = firestoreRepository.shuffleQuestionsForJoin(quiz, normalizedRoll)
-                    .map { question -> firestoreRepository.shuffleOptionsForJoin(question, quiz, normalizedRoll) }
-                val remaining = (quiz.durationSec).coerceAtLeast(0)
+                val shuffledQuestions = firestoreRepository.shuffleQuestionsForJoin(resolvedQuiz, normalizedRoll)
+                    .map { question -> firestoreRepository.shuffleOptionsForJoin(question, resolvedQuiz, normalizedRoll) }
+                val remaining = (resolvedQuiz.durationSec).coerceAtLeast(0)
                 _uiState.value = _uiState.value.copy(
-                    quiz = quiz,
+                    quiz = resolvedQuiz,
                     shuffledQuestions = shuffledQuestions,
                     timeRemainingSeconds = remaining,
                     isLoading = false
                 )
+                Log.d("QuizViewModel", "Quiz loaded; starting timer=${remaining}s")
                 startTimer()
-                currentResponseId = java.util.UUID.randomUUID().toString()
+                // Initialize response on server so policy violations can be logged against it
+                createInitialResponse(resolvedQuiz, normalizedRoll, currentStudentInfo)
             } catch (e: Exception) {
+                Log.e("QuizViewModel", "Failed to load quiz", e)
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
                     error = e.message ?: "Failed to load quiz"
@@ -195,90 +231,39 @@ class QuizViewModel @Inject constructor(
 
                 val quiz = _uiState.value.quiz ?: return@launch
                 val localResponseId = currentResponseId ?: java.util.UUID.randomUUID().toString()
-                
                 // Calculate score
                 val answers = _uiState.value.answers.values.toList()
                 val score = firestoreRepository.calculateScore(quiz, answers)
-                
-                // Attempt to upload final response (offline-first: create on submit)
-                val deviceId = try { deviceUtils.getDeviceId() } catch (e: Exception) { "" }
-                val response = Response(
-                    id = localResponseId,
-                    quizId = quiz.id,
-                    rollNumber = currentRollNumber ?: "",
-                    deviceId = deviceId,
-                    studentInfo = emptyMap(),
-                    answers = answers,
-                    clientSubmittedAt = Timestamp.now(),
-                    serverUploadedAt = null,
-                    score = score,
-                    gradeStatus = GradeStatus.AUTO,
-                    appSwitchEvents = emptyList(),
-                    disqualified = _uiState.value.isDisqualified,
-                    flagged = _uiState.value.isFlagged
-                )
-                firestoreRepository.submitResponse(response).fold(
-                    onSuccess = { responseId ->
-                        _uiState.value = _uiState.value.copy(
-                            isSubmitted = true,
-                            submittedResponseId = responseId,
-                            isPendingUpload = false
-                        )
 
-                        // Save local history entry for immediate submission
-                        try {
-                            val roll = currentRollNumber ?: ""
-                            localRepository.saveHistory(
-                                quizId = quiz.id,
-                                quizTitle = quiz.title,
-                                rollNumber = roll,
-                                score = score,
-                                submittedAtMillis = System.currentTimeMillis()
-                            )
-                        } catch (_: Exception) { /* swallow local save errors */ }
-                        
-                        // Stop timer
-                        timerJob?.cancel()
-                    },
-                    onFailure = { exception ->
-                        // Queue offline submission
-                        try {
-                            val gson = Gson()
-                            val answersJson = gson.toJson(answers)
-                            val studentInfoJson = "{}" // not needed for update
-                            val roll = currentRollNumber ?: ""
-                            offlineRepository.savePendingSubmission(
-                                responseId = localResponseId,
-                                quizId = quiz.id,
-                                rollNumber = roll,
-                                studentInfoJson = studentInfoJson,
-                                answersJson = answersJson,
-                                flagged = _uiState.value.isFlagged
-                            )
-
-                            // Enqueue worker with network constraint
-                            val constraints = Constraints.Builder()
-                                .setRequiredNetworkType(NetworkType.CONNECTED)
-                                .build()
-                            val workRequest = OneTimeWorkRequestBuilder<PendingUploadWorker>()
-                                .setConstraints(constraints)
-                                .build()
-                            WorkManager.getInstance(context).enqueue(workRequest)
-
-                            _uiState.value = _uiState.value.copy(
-                                isSubmitted = true,
-                                submittedResponseId = localResponseId,
-                                error = null,
-                                isPendingUpload = true
-                            )
-                            timerJob?.cancel()
-                        } catch (e: Exception) {
-                            _uiState.value = _uiState.value.copy(
-                                error = "Failed to submit quiz: ${exception.message}"
-                            )
-                        }
-                    }
-                )
+                // Always queue offline submission; student uploads manually later
+                try {
+                    val gson = Gson()
+                    val answersJson = gson.toJson(answers)
+                    val infoMap = currentStudentInfo ?: emptyMap()
+                    val studentInfoJson = try { gson.toJson(infoMap) } catch (_: Exception) { "{}" }
+                    val roll = currentRollNumber ?: ""
+                    offlineRepository.savePendingSubmission(
+                        responseId = localResponseId,
+                        quizId = quiz.id,
+                        rollNumber = roll,
+                        studentInfoJson = studentInfoJson,
+                        answersJson = answersJson,
+                        flagged = _uiState.value.isFlagged
+                    )
+                    _uiState.value = _uiState.value.copy(
+                        isSubmitted = true,
+                        submittedResponseId = localResponseId,
+                        error = null,
+                        isPendingUpload = true
+                    )
+                    Log.d("QuizViewModel", "Submission saved locally responseId=$localResponseId")
+                    timerJob?.cancel()
+                } catch (e: Exception) {
+                    Log.e("QuizViewModel", "Failed to save local submission", e)
+                    _uiState.value = _uiState.value.copy(
+                        error = "Failed to save submission: ${e.message}"
+                    )
+                }
             } catch (e: Exception) {
                 // Also queue offline on exception
                 try {
@@ -298,15 +283,6 @@ class QuizViewModel @Inject constructor(
                         answersJson = answersJson,
                         flagged = _uiState.value.isFlagged
                     )
-
-                    val constraints = Constraints.Builder()
-                        .setRequiredNetworkType(NetworkType.CONNECTED)
-                        .build()
-                    val workRequest = OneTimeWorkRequestBuilder<PendingUploadWorker>()
-                        .setConstraints(constraints)
-                        .build()
-                    WorkManager.getInstance(context).enqueue(workRequest)
-
                     _uiState.value = _uiState.value.copy(
                         isSubmitted = true,
                         submittedResponseId = responseId,

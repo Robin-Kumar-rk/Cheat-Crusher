@@ -69,6 +69,7 @@ const buildRawJsonString = (quiz, extras = {}) => {
     downloadCode: extras.downloadCode || quiz.downloadCode || '',
     latencyMinutes: extras.latencyMinutes ?? quiz.latencyMinutes ?? 0,
     timerMinutes: extras.timerMinutes ?? quiz.timerMinutes ?? 60,
+    unlockPassword: extras.unlockPassword || quiz.unlockPassword || '',
     preForm: {
       fields: (quiz.preJoinFields || []).map(f => ({ key: f.id || f.key || '', label: f.label || '', required: !!f.required }))
     },
@@ -88,7 +89,6 @@ const buildRawJsonString = (quiz, extras = {}) => {
         weight: Math.round((q.weight || 1))
       }
     }),
-    allowedJoinCodes: extras.allowedJoinCodes || [],
     answerViewPassword: extras.answerViewPassword || '',
     autoDeleteDays: quiz.autoDeleteAfterDays || 7
   }
@@ -99,11 +99,15 @@ export const createQuiz = async (quizData, creatorId) => {
   try {
     const code = await generateUniqueCode()
     const downloadCode = await generateUniqueDownloadCode()
+    const unlockPassword = `PWD-${Math.random().toString(36).substring(2, 8).toUpperCase()}`
+    const answerViewPassword = `ANS-${Math.random().toString(36).substring(2, 8).toUpperCase()}`
     
     const quiz = {
       ...quizData,
       code,
       downloadCode,
+      unlockPassword,
+      answerViewPassword,
       creatorId,
       createdAt: serverTimestamp(),
       editableUntilStart: true
@@ -112,8 +116,8 @@ export const createQuiz = async (quizData, creatorId) => {
     const docRef = await addDoc(collection(db, 'quizzes'), quiz)
     const rawJson = buildRawJsonString({ ...quiz, id: docRef.id }, {
       downloadCode,
-      allowedJoinCodes: quizData.allowedJoinCodes || [],
-      answerViewPassword: quizData.answerViewPassword || '',
+      unlockPassword,
+      answerViewPassword,
       latencyMinutes: quizData.latencyMinutes,
       timerMinutes: quizData.timerMinutes
     })
@@ -199,7 +203,7 @@ export const updateQuiz = async (quizId, updates) => {
     const data = snap.data() || {}
     const rawJson = buildRawJsonString({ ...data, id: quizId }, {
       downloadCode: data.downloadCode,
-      allowedJoinCodes: updates.allowedJoinCodes || data.allowedJoinCodes || [],
+      unlockPassword: data.unlockPassword,
       answerViewPassword: updates.answerViewPassword || data.answerViewPassword || '',
       latencyMinutes: updates.latencyMinutes,
       timerMinutes: updates.timerMinutes || data.timerMinutes
@@ -308,21 +312,21 @@ export const cloneQuiz = async (sourceQuizId, overrides = {}) => {
 
     const newCode = await generateUniqueCode()
     const downloadCode = await generateUniqueDownloadCode()
+    const unlockPassword = `PWD-${Math.random().toString(36).substring(2, 8).toUpperCase()}`
     const cloned = {
       title: src.title,
       code: newCode,
       downloadCode,
+      unlockPassword,
       // Clone under the current teacher by default; fallback to source creator
       creatorId: auth.currentUser?.uid || src.creatorId,
       createdAt: serverTimestamp(),
-      startsAt: overrides.startsAt ?? src.startsAt,
-      endsAt: overrides.endsAt ?? src.endsAt,
-      allowLateUploadSec: overrides.allowLateUploadSec ?? src.allowLateUploadSec ?? 0,
-      allowJoinAfterStart: overrides.allowJoinAfterStart ?? src.allowJoinAfterStart ?? false,
-      maxLateSec: overrides.maxLateSec ?? src.maxLateSec ?? 0,
+      allowLateUploadSec: 0,
+      allowJoinAfterStart: false,
+      maxLateSec: 0,
       onAppSwitch: overrides.onAppSwitch ?? src.onAppSwitch ?? 'flag',
-      showResultsAt: overrides.showResultsAt ?? src.showResultsAt,
-      showAnswersWithMarks: overrides.showAnswersWithMarks ?? src.showAnswersWithMarks ?? false,
+      showResultsAt: null,
+      showAnswersWithMarks: false,
       shuffleQuestions: overrides.shuffleQuestions ?? src.shuffleQuestions ?? true,
       shuffleOptions: overrides.shuffleOptions ?? src.shuffleOptions ?? true,
       autoDeleteAfterDays: overrides.autoDeleteAfterDays ?? src.autoDeleteAfterDays ?? 7,
@@ -330,13 +334,14 @@ export const cloneQuiz = async (sourceQuizId, overrides = {}) => {
       preJoinFields: overrides.preJoinFields ?? src.preJoinFields ?? [],
       questions: src.questions ?? []
     }
-
+    
     const newRef = await addDoc(collection(db, 'quizzes'), cloned)
     const rawJson = buildRawJsonString({ ...cloned, id: newRef.id }, {
       downloadCode,
-      allowedJoinCodes: overrides.allowedJoinCodes ?? src.allowedJoinCodes ?? [],
+      unlockPassword,
       answerViewPassword: overrides.answerViewPassword ?? src.answerViewPassword ?? '',
-      latencyMinutes: overrides.latencyMinutes ?? src.latencyMinutes
+      latencyMinutes: overrides.latencyMinutes ?? src.latencyMinutes,
+      timerMinutes: overrides.timerMinutes ?? src.timerMinutes ?? 60
     })
     await updateDoc(doc(db, 'quizzes', newRef.id), { rawJson })
     return { id: newRef.id, ...cloned, rawJson }

@@ -13,7 +13,13 @@ import {
   CircularProgress,
   IconButton,
   Menu,
-  MenuItem
+  MenuItem,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField,
+  Tooltip
 } from '@mui/material'
 import {
   Add as AddIcon,
@@ -21,8 +27,15 @@ import {
   People as PeopleIcon,
   Quiz as QuizIcon,
   Schedule as ScheduleIcon,
-  Warning as WarningIcon
+  Warning as WarningIcon,
+  Visibility as VisibilityIcon,
+  ContentCopy as ContentCopyIcon,
+  Key as KeyIcon
 } from '@mui/icons-material'
+import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker'
+import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider'
+import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns'
+import { generateJoinCode } from '../utils/joinCode'
 import { getQuizzes, deleteQuiz } from '../services/quizService'
 import { auth } from '../services/firebase'
 import { format } from 'date-fns'
@@ -34,6 +47,11 @@ function DashboardPage() {
   const [error, setError] = useState('')
   const [anchorEl, setAnchorEl] = useState(null)
   const [selectedQuiz, setSelectedQuiz] = useState(null)
+  const [joinDialogOpen, setJoinDialogOpen] = useState(false)
+  const [joinDialogQuiz, setJoinDialogQuiz] = useState(null)
+  const [joinStartTime, setJoinStartTime] = useState(new Date())
+  const [generatedJoinCode, setGeneratedJoinCode] = useState('')
+  const [genError, setGenError] = useState('')
 
   useEffect(() => {
     loadQuizzes()
@@ -170,17 +188,39 @@ function DashboardPage() {
                       </IconButton>
                     </Box>
 
-                    <Box display="flex" gap={1} mb={2}>
+                    <Box display="flex" gap={1} mb={2} sx={{ alignItems: 'center' }}>
                       <Chip
                         label={status.status.toUpperCase()}
                         color={status.color}
                         size="small"
                       />
-                      <Chip
-                        label={quiz.downloadCode || quiz.code}
-                        variant="outlined"
-                        size="small"
-                      />
+                      <Tooltip title="Copy Download Code">
+                        <Chip
+                          label={quiz.downloadCode || quiz.code}
+                          variant="outlined"
+                          size="small"
+                          onClick={() => navigator.clipboard.writeText(quiz.downloadCode || quiz.code)}
+                        />
+                      </Tooltip>
+                      {/* Answer Code Chip */}
+                      {(() => {
+                        try {
+                          const ans = quiz.answerViewPassword || (quiz.rawJson ? JSON.parse(quiz.rawJson).answerViewPassword : '')
+                          return ans ? (
+                            <Tooltip title="Copy Answer Code">
+                              <Chip
+                                icon={<KeyIcon />}
+                                label={`ANS: ${ans}`}
+                                variant="outlined"
+                                size="small"
+                                onClick={() => navigator.clipboard.writeText(ans)}
+                              />
+                            </Tooltip>
+                          ) : null
+                        } catch {
+                          return null
+                        }
+                      })()}
                     </Box>
 
                     {showWarning && (
@@ -203,17 +243,27 @@ function DashboardPage() {
                         Timer: {quiz.timerMinutes || Math.round((quiz.durationSec || 0)/60)} min • Latency: {quiz.latencyMinutes || Math.round((quiz.allowLateUploadSec || 0)/60)} min
                       </Typography>
                     </Box>
+                    <Box display="flex" alignItems="center" gap={1} mb={1}>
+                      <Typography variant="body2" color="text.secondary">
+                        Answer Code: {quiz.answerViewPassword || (() => { try { const raw = quiz.rawJson ? JSON.parse(quiz.rawJson) : {}; return raw.answerViewPassword || '—' } catch { return '—' } })()}
+                      </Typography>
+                      <Button size="small" onClick={() => {
+                        try {
+                          const code = quiz.answerViewPassword || (quiz.rawJson ? JSON.parse(quiz.rawJson).answerViewPassword : '')
+                          if (code) navigator.clipboard.writeText(code)
+                        } catch {}
+                      }}>Copy</Button>
+                    </Box>
                   </CardContent>
 
-                  <CardActions>
+                  <CardActions sx={{ justifyContent: 'space-between', px: 2 }}>
                     <Button
                       size="small"
-                      onClick={() => {
-                        console.log('Navigating to quiz details, quiz ID:', quiz.id)
-                        navigate(`/quiz/${quiz.id}`)
-                      }}
+                      variant="text"
+                      startIcon={<VisibilityIcon />}
+                      onClick={() => navigate(`/quiz/${quiz.id}`)}
                     >
-                      View Details
+                      View
                     </Button>
                     <Button
                       size="small"
@@ -223,6 +273,18 @@ function DashboardPage() {
                       }}
                     >
                       Responses
+                    </Button>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      onClick={() => {
+                        setJoinDialogQuiz(quiz)
+                        setJoinDialogOpen(true)
+                        setGeneratedJoinCode('')
+                        setGenError('')
+                      }}
+                    >
+                      Get a Join Code
                     </Button>
                   </CardActions>
                 </Card>
@@ -237,13 +299,7 @@ function DashboardPage() {
         open={Boolean(anchorEl)}
         onClose={handleMenuClose}
       >
-        <MenuItem onClick={() => {
-          console.log('Menu: Navigating to quiz details, quiz ID:', selectedQuiz?.id)
-          navigate(`/quiz/${selectedQuiz?.id}`)
-          handleMenuClose()
-        }}>
-          Edit Quiz
-        </MenuItem>
+        {/* Remove Edit Quiz option per spec */}
         <MenuItem onClick={() => {
           console.log('Menu: Navigating to quiz responses, quiz ID:', selectedQuiz?.id)
           navigate(`/quiz/${selectedQuiz?.id}/responses`)
@@ -255,6 +311,61 @@ function DashboardPage() {
           Delete Quiz
         </MenuItem>
       </Menu>
+
+      {/* Join Code Dialog */}
+      <Dialog open={joinDialogOpen} onClose={() => setJoinDialogOpen(false)} fullWidth maxWidth="sm">
+        <DialogTitle>Get a Join Code</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Select a start time. The join code mixes the unlock password with the time in an unreadable format.
+          </Typography>
+          <LocalizationProvider dateAdapter={AdapterDateFns}>
+            <DateTimePicker
+              label="Select Start Time"
+              value={joinStartTime}
+              onChange={(value) => setJoinStartTime(value)}
+            />
+          </LocalizationProvider>
+          {genError && (
+            <Alert severity="error" sx={{ mt: 2 }}>{genError}</Alert>
+          )}
+          {generatedJoinCode && (
+            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', mt: 2 }}>
+              <TextField
+                fullWidth
+                label="Join Code"
+                value={generatedJoinCode}
+                InputProps={{ readOnly: true }}
+              />
+              <Tooltip title="Copy">
+                <IconButton onClick={() => navigator.clipboard.writeText(generatedJoinCode)}>
+                  <ContentCopyIcon />
+                </IconButton>
+              </Tooltip>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setJoinDialogOpen(false)}>Close</Button>
+          <Button
+            variant="contained"
+            onClick={async () => {
+              try {
+                setGenError('')
+                const quiz = joinDialogQuiz
+                const raw = quiz?.rawJson ? JSON.parse(quiz.rawJson) : {}
+                const pwd = quiz?.unlockPassword || raw.unlockPassword || ''
+                const code = await generateJoinCode(pwd, joinStartTime)
+                setGeneratedJoinCode(code)
+              } catch (e) {
+                setGenError(e.message || 'Failed to generate join code')
+              }
+            }}
+          >
+            Generate
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   )
 }

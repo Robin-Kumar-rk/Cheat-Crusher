@@ -327,31 +327,25 @@ fun QuizScreen(
         }
     }
     
-    // Error Message
+    // Auto-exit on disqualification per policy
+    LaunchedEffect(uiState.isDisqualified) {
+        if (uiState.isDisqualified) {
+            onExitToHome()
+        }
+    }
+
+    // Error Message (non-disqualification)
     uiState.error?.let { error ->
-        AlertDialog(
-            onDismissRequest = {
-                if (!uiState.isDisqualified) {
-                    viewModel.clearError()
+        if (!uiState.isDisqualified) {
+            AlertDialog(
+                onDismissRequest = { viewModel.clearError() },
+                title = { Text("Error") },
+                text = { Text(error) },
+                confirmButton = {
+                    TextButton(onClick = { viewModel.clearError() }) { Text("OK") }
                 }
-            },
-            title = { Text(if (uiState.isDisqualified) "Disqualified" else "Error") },
-            text = { Text(error) },
-            confirmButton = {
-                if (uiState.isDisqualified) {
-                    TextButton(onClick = { 
-                        // Exit to home when disqualified
-                        onExitToHome()
-                    }) {
-                        Text("Exit Quiz")
-                    }
-                } else {
-                    TextButton(onClick = { viewModel.clearError() }) {
-                        Text("OK")
-                    }
-                }
-            }
-        )
+            )
+        }
     }
 
     // Back/Exit confirmation dialog when user attempts to leave quiz

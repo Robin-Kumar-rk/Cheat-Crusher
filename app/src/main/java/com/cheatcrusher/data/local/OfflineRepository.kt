@@ -29,6 +29,10 @@ class OfflineRepository @Inject constructor(
             invalidated = false
         )
         dao.upsertCachedQuiz(cached)
+        // Also persist to local files so it survives app restarts reliably
+        try {
+            LocalStore.saveQuiz(context, quizId, code.uppercase(), cached.title, rawJson)
+        } catch (_: Exception) { }
         return true
     }
 
@@ -38,6 +42,8 @@ class OfflineRepository @Inject constructor(
 
     suspend fun deleteCachedQuiz(quizId: String) {
         dao.deleteCachedQuiz(quizId)
+        // Also delete from local files so it doesn't get rehydrated
+        try { LocalStore.deleteQuiz(context, quizId) } catch (_: Exception) { }
     }
 
     fun parseCachedQuiz(cached: CachedQuiz): com.cheatcrusher.domain.Quiz? {
@@ -70,7 +76,7 @@ class OfflineRepository @Inject constructor(
                     allowLateUploadSec = (raw.latencyMinutes ?: 0) * 60,
                     allowJoinAfterStart = false,
                     maxLateSec = 0,
-                    onAppSwitchString = "flag",
+                    onAppSwitchString = (raw.onAppSwitch ?: "flag"),
                     showAnswersWithMarks = false,
                     shuffleQuestions = false,
                     shuffleOptions = false,
@@ -84,6 +90,34 @@ class OfflineRepository @Inject constructor(
         } catch (_: Exception) { /* fall through */ }
         // Fallback to legacy domain-serialized quiz
         return try { gson.fromJson(cached.metadataJson, com.cheatcrusher.domain.Quiz::class.java) } catch (_: Exception) { null }
+    }
+
+    suspend fun rehydrateCachedFromFiles() {
+        try {
+            val saved = LocalStore.listSaved(context)
+            saved.forEach { (quizId, code, title) ->
+                val raw = LocalStore.readQuiz(context, quizId) ?: return@forEach
+                val existing = dao.getCachedQuizById(quizId)
+                if (existing == null) {
+                    val cached = CachedQuiz(
+                        quizId = quizId,
+                        quizCode = code,
+                        title = title,
+                        metadataJson = raw,
+                        startsAtMillis = 0L,
+                        endsAtMillis = 0L,
+                        downloadedAtElapsedRealtime = android.os.SystemClock.elapsedRealtime(),
+                        requiresNetworkTime = false,
+                        invalidated = false
+                    )
+                    dao.upsertCachedQuiz(cached)
+                }
+            }
+        } catch (_: Exception) { }
+    }
+
+    suspend fun updatePendingStudentInfo(id: Long, studentInfoJson: String) {
+        db.localDao().updatePendingStudentInfo(id, studentInfoJson)
     }
 
     suspend fun savePendingSubmission(
@@ -112,5 +146,30 @@ class OfflineRepository @Inject constructor(
         return dao.insertPendingSubmission(pending)
     }
 
+    // Include all statuses so UI can reflect uploading/failed items
+    suspend fun listPendingSubmissionsAny(): List<PendingSubmission> {
+        return dao.listPendingSubmissions("pending") +
+                dao.listPendingSubmissions("uploading") +
+                dao.listPendingSubmissions("failed")
+    }
+
+    suspend fun markPendingUploading(id: Long) {
+        dao.updatePendingSubmissionStatus(id, "uploading", null)
+    }
+
     suspend fun listPendingSubmissions(): List<PendingSubmission> = dao.listPendingSubmissions()
+
+    suspend fun getPendingById(id: Long): PendingSubmission? = dao.getPendingById(id)
+
+    suspend fun deletePendingSubmission(id: Long) {
+        dao.deletePendingSubmission(id)
+    }
+
+    fun saveAnswerCode(quizId: String, code: String) {
+        LocalStore.saveAnswerCode(context, quizId, code)
+    }
+
+    fun readAnswerCode(quizId: String): String? {
+        return LocalStore.readAnswerCode(context, quizId)
+    }
 }

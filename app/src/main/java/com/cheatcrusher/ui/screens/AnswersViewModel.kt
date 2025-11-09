@@ -2,12 +2,11 @@ package com.cheatcrusher.ui.screens
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.cheatcrusher.data.firebase.FirestoreRepository
-import com.cheatcrusher.domain.Response
-import com.cheatcrusher.domain.Quiz
-import com.cheatcrusher.domain.QuestionType
+import com.cheatcrusher.data.local.OfflineRepository
 import com.cheatcrusher.domain.Answer
-import com.cheatcrusher.domain.Question
+import com.cheatcrusher.domain.QuestionType
+import com.cheatcrusher.domain.Quiz
+import com.cheatcrusher.domain.Response
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -15,87 +14,85 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-// Breakdown model for UI
-data class AnswerBreakdownItem(
-    val questionId: String,
-    val questionText: String,
-    val selectedOptionTexts: List<String>,
-    val correctOptionTexts: List<String>,
-    val earnedMarks: Double,
-    val maxMarks: Double,
-    val isCorrect: Boolean,
-    val isTextQuestion: Boolean
-)
-
-data class ResultUiState(
-    val response: Response? = null,
+data class AnswersUiState(
     val quiz: Quiz? = null,
     val breakdown: List<AnswerBreakdownItem> = emptyList(),
     val isLoading: Boolean = false,
     val error: String? = null,
-    val savedAnsCode: String? = null
+    val savedAnsCode: String? = null,
+    val hasStudentAnswers: Boolean = false
 )
 
 @HiltViewModel
-class ResultViewModel @Inject constructor(
-    private val firestoreRepository: FirestoreRepository,
-    private val offlineRepository: com.cheatcrusher.data.local.OfflineRepository
+class AnswersViewModel @Inject constructor(
+    private val offlineRepository: OfflineRepository
 ) : ViewModel() {
-    
-    private val _uiState = MutableStateFlow(ResultUiState())
-    val uiState: StateFlow<ResultUiState> = _uiState.asStateFlow()
-    
-    fun loadResult(responseId: String) {
+
+    private val _uiState = MutableStateFlow(AnswersUiState())
+    val uiState: StateFlow<AnswersUiState> = _uiState.asStateFlow()
+
+    fun load(quizId: String, pendingId: Long?) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
-            
             try {
-                firestoreRepository.getResponseById(responseId).fold(
-                    onSuccess = { response ->
-                        // After loading response, load quiz details to build breakdown
-                        firestoreRepository.getQuizById(response.quizId).fold(
-                            onSuccess = { quiz ->
-                                val breakdown = computeBreakdown(quiz, response)
-                                val savedAns = offlineRepository.readAnswerCode(quiz.id)
-                                _uiState.value = _uiState.value.copy(
-                                    response = response,
-                                    quiz = quiz,
-                                    breakdown = breakdown,
-                                    isLoading = false,
-                                    savedAnsCode = savedAns
-                                )
-                            },
-                            onFailure = { exception ->
-                                _uiState.value = _uiState.value.copy(
-                                    response = response,
-                                    isLoading = false,
-                                    error = exception.message ?: "Failed to load quiz details"
-                                )
-                            }
-                        )
-                    },
-                    onFailure = { exception ->
-                        _uiState.value = _uiState.value.copy(
-                            isLoading = false,
-                            error = exception.message ?: "Failed to load result"
-                        )
+                val cached = offlineRepository.getCachedQuizById(quizId)
+                if (cached == null) {
+                    _uiState.value = _uiState.value.copy(isLoading = false, error = "Quiz not found locally")
+                    return@launch
+                }
+                val quiz = offlineRepository.parseCachedQuiz(cached)
+                if (quiz == null) {
+                    _uiState.value = _uiState.value.copy(isLoading = false, error = "Failed to parse quiz")
+                    return@launch
+                }
+                val savedAns = offlineRepository.readAnswerCode(quiz.id)
+
+                var answers: List<Answer> = emptyList()
+                var hasStudent = false
+                if (pendingId != null && pendingId > 0) {
+                    val pending = offlineRepository.getPendingById(pendingId)
+                    if (pending != null && pending.quizId == quiz.id) {
+                        try {
+                            val type = com.google.gson.reflect.TypeToken.getParameterized(List::class.java, Answer::class.java).type
+                            answers = com.google.gson.Gson().fromJson(pending.answersJson, type)
+                            hasStudent = true
+                        } catch (_: Exception) { /* ignore */ }
                     }
+                }
+                val response = Response(
+                    quizId = quiz.id,
+                    rollNumber = "",
+                    deviceId = "",
+                    studentInfo = emptyMap(),
+                    answers = answers,
+                    clientSubmittedAt = null,
+                    serverUploadedAt = null,
+                    score = null,
+                    gradeStatus = com.cheatcrusher.domain.GradeStatus.PENDING,
+                    appSwitchEvents = emptyList(),
+                    disqualified = false,
+                    flagged = false
+                )
+
+                val breakdown = computeBreakdown(quiz, response)
+                _uiState.value = AnswersUiState(
+                    quiz = quiz,
+                    breakdown = breakdown,
+                    isLoading = false,
+                    savedAnsCode = savedAns,
+                    hasStudentAnswers = hasStudent
                 )
             } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    error = e.message ?: "Failed to load result"
-                )
+                _uiState.value = _uiState.value.copy(isLoading = false, error = e.message)
             }
         }
     }
-    
-    // Build per-question breakdown for UI
+
     private fun computeBreakdown(quiz: Quiz, response: Response): List<AnswerBreakdownItem> {
         return quiz.questions.map { question ->
             val answer: Answer? = response.answers.find { it.questionId == question.id }
             val isText = question.type == QuestionType.TEXT
-            
+
             val selectedOptionTexts: List<String> = when (question.type) {
                 QuestionType.TEXT -> listOf(answer?.answerText ?: "")
                 else -> {
@@ -103,7 +100,7 @@ class ResultViewModel @Inject constructor(
                     question.options.filter { it.id in selectedIds }.map { it.text }
                 }
             }
-            
+
             val correctOptionTexts: List<String> = when (question.type) {
                 QuestionType.TEXT -> emptyList()
                 else -> {
@@ -111,7 +108,7 @@ class ResultViewModel @Inject constructor(
                     question.options.filter { it.id in correctIds }.map { it.text }
                 }
             }
-            
+
             val isCorrect = when (question.type) {
                 QuestionType.MCQ -> {
                     val selected = answer?.optionIds ?: emptyList()
@@ -124,9 +121,9 @@ class ResultViewModel @Inject constructor(
                 }
                 QuestionType.TEXT -> false
             }
-            
+
             val earned = if (!isText && isCorrect) question.weight else 0.0
-            
+
             AnswerBreakdownItem(
                 questionId = question.id,
                 questionText = question.text,
@@ -139,10 +136,6 @@ class ResultViewModel @Inject constructor(
             )
         }
     }
-    
-    fun clearError() {
-        _uiState.value = _uiState.value.copy(error = null)
-    }
 
     fun saveAnsCode(quizId: String, code: String) {
         viewModelScope.launch {
@@ -153,3 +146,4 @@ class ResultViewModel @Inject constructor(
         }
     }
 }
+

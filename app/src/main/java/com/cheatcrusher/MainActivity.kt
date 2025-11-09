@@ -18,9 +18,11 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.cheatcrusher.ui.screens.AnswersScreen
 // Removed unused profile setup imports
 import com.cheatcrusher.ui.screens.HomeScreen
 import com.cheatcrusher.ui.screens.DownloadedScreen
+import com.cheatcrusher.ui.screens.DownloadQuizScreen
 import com.cheatcrusher.ui.screens.SubmissionScreen
 import com.cheatcrusher.ui.screens.JoinQuizScreen
 import com.cheatcrusher.ui.screens.PreQuizFormScreen
@@ -93,13 +95,30 @@ class MainActivity : ComponentActivity() {
                                     onDownloadQuiz = { navController.navigate("download") }
                                 )
                             }
+                            composable("download") {
+                                DownloadQuizScreen(
+                                    onDownloaded = { quizId -> navController.navigate("preform/$quizId") },
+                                    onBack = {
+                                        navController.navigate("home") {
+                                            popUpTo("home") { inclusive = true }
+                                            launchSingleTop = true
+                                        }
+                                    }
+                                )
+                            }
                             composable("downloaded") {
                                 DownloadedScreen(
-                                    onEnterOffline = { quizId -> navController.navigate("preform/$quizId") }
+                                    onEnterOffline = { quizId -> navController.navigate("preform/$quizId") },
+                                    onSeeAnswers = { quizId -> navController.navigate("answers/$quizId/0") }
                                 )
                             }
                             composable("submission") {
-                                SubmissionScreen()
+                                SubmissionScreen(
+                                    onSeeAnswers = { quizId, pendingId ->
+                                        val pid = pendingId ?: 0L
+                                        navController.navigate("answers/$quizId/$pid")
+                                    }
+                                )
                             }
                             composable("join") {
                                 JoinQuizScreen(
@@ -117,8 +136,11 @@ class MainActivity : ComponentActivity() {
                                 PreQuizFormScreen(
                                     quizId = quizId,
                                     onStartQuiz = { roll, infoJson ->
-                                        val encoded = android.net.Uri.encode(infoJson)
-                                        navController.navigate("quiz/$quizId/$roll/$encoded")
+                                        // Encode payloads for safe routing; use a sentinel for blank roll
+                                        val encodedInfo = android.net.Uri.encode(infoJson)
+                                        val encodedRoll = android.net.Uri.encode(roll)
+                                        val routeRoll = if (roll.isBlank()) "_" else encodedRoll
+                                        navController.navigate("quiz/$quizId/$routeRoll/$encodedInfo")
                                     },
                                     onBack = {
                                         navController.navigate("home") {
@@ -131,8 +153,10 @@ class MainActivity : ComponentActivity() {
                             // Removed unused profile setup route
                             composable("quiz/{quizId}/{roll}/{info}") { backStackEntry ->
                                 val quizId = backStackEntry.arguments?.getString("quizId") ?: ""
-                                val roll = backStackEntry.arguments?.getString("roll") ?: ""
+                                val rawRoll = backStackEntry.arguments?.getString("roll") ?: ""
                                 val infoJson = backStackEntry.arguments?.getString("info") ?: ""
+                                // Translate sentinel back to blank and decode any encoding
+                                val roll = if (rawRoll == "_") "" else android.net.Uri.decode(rawRoll)
                                 QuizScreen(
                                     quizId = quizId,
                                     rollNumber = roll,
@@ -158,6 +182,16 @@ class MainActivity : ComponentActivity() {
                                     }
                                 )
                             }
+                            composable("answers/{quizId}/{pendingId}") { backStackEntry ->
+                                val quizId = backStackEntry.arguments?.getString("quizId") ?: ""
+                                val pendingIdStr = backStackEntry.arguments?.getString("pendingId") ?: "0"
+                                val pendingId = pendingIdStr.toLongOrNull()
+                                AnswersScreen(
+                                    quizId = quizId,
+                                    pendingId = pendingId,
+                                    onBack = { navController.popBackStack() }
+                                )
+                            }
                         }
                     }
                 }
@@ -165,14 +199,3 @@ class MainActivity : ComponentActivity() {
         }
     }
 }
-                            composable("download") {
-                                DownloadQuizScreen(
-                                    onDownloaded = { quizId -> navController.navigate("preform/$quizId") },
-                                    onBack = {
-                                        navController.navigate("home") {
-                                            popUpTo("home") { inclusive = true }
-                                            launchSingleTop = true
-                                        }
-                                    }
-                                )
-                            }

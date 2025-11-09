@@ -31,7 +31,14 @@ class PendingUploadWorker(
         val gson = Gson()
 
         return try {
-            val pendingList = dao.listPendingSubmissions("pending")
+            val targetId = inputData.getLong("pendingId", 0L)
+            val pendingList = if (targetId > 0) {
+                // If a specific ID was requested, fetch it regardless of status
+                dao.getPendingById(targetId)?.let { listOf(it) } ?: emptyList()
+            } else {
+                // Otherwise process all eligible statuses
+                dao.listPendingSubmissions("pending") + dao.listPendingSubmissions("uploading")
+            }
             pendingList.forEach { item ->
                 // Mark as uploading
                 dao.updatePendingSubmissionStatus(item.id, "uploading", null)
@@ -49,6 +56,14 @@ class PendingUploadWorker(
                         // Build response and submit (create new doc)
                         val studentInfoType = object : TypeToken<Map<String, String>>() {}.type
                         val studentInfo: Map<String, String> = try { gson.fromJson(item.studentInfoJson, studentInfoType) } catch (_: Exception) { emptyMap() }
+
+                        // Enforce required pre-form details before upload
+                        val raw = com.cheatcrusher.util.JoinCodeVerifier.parse(quiz.rawJson)
+                        val requiredOk = (raw?.preForm?.fields ?: emptyList()).all { f -> !f.required || !((studentInfo[f.key] ?: "").isBlank()) }
+                        if (!requiredOk) {
+                            dao.updatePendingSubmissionStatus(item.id, "failed", "Required details missing; please fill before upload")
+                            return@forEach
+                        }
                         val response = com.cheatcrusher.domain.Response(
                             quizId = item.quizId,
                             rollNumber = item.rollNumber,

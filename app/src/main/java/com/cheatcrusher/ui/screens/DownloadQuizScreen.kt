@@ -9,9 +9,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewModelScope
 import com.cheatcrusher.data.firebase.FirestoreRepository
 import com.cheatcrusher.data.local.OfflineRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import android.util.Log
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -40,16 +42,20 @@ class DownloadQuizViewModel @Inject constructor(
         }
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
+            Log.d("DownloadQuiz", "Attempting download for code=$normalized")
             firestoreRepository.getQuizRawByDownloadCode(normalized).fold(
                 onSuccess = { (docId, rawJson) ->
                     val ok = offlineRepository.cacheRawQuizFromDownload(docId, normalized, rawJson)
                     if (ok) {
+                        Log.d("DownloadQuiz", "Cached quiz docId=$docId")
                         _uiState.value = _uiState.value.copy(isLoading = false, downloadedQuizId = docId)
                     } else {
+                        Log.e("DownloadQuiz", "Failed to cache quiz")
                         _uiState.value = _uiState.value.copy(isLoading = false, error = "Failed to cache quiz")
                     }
                 },
                 onFailure = { e ->
+                    Log.e("DownloadQuiz", "Download failed", e)
                     _uiState.value = _uiState.value.copy(isLoading = false, error = e.message ?: "Download failed")
                 }
             )
@@ -110,4 +116,3 @@ fun DownloadQuizScreen(
         }
     }
 }
-
