@@ -72,14 +72,22 @@ const buildRawJsonString = (quiz, extras = {}) => {
     preForm: {
       fields: (quiz.preJoinFields || []).map(f => ({ key: f.id || f.key || '', label: f.label || '', required: !!f.required }))
     },
-    questions: (quiz.questions || []).map(q => ({
-      id: q.id,
-      type: q.type,
-      text: q.text,
-      options: (q.options || []).map(o => o.text ?? o),
-      correct: (q.correct || []).map((_, idx) => idx),
-      weight: Math.round((q.weight || 1))
-    })),
+    questions: (quiz.questions || []).map(q => {
+      const optionTexts = (q.options || []).map(o => o.text ?? o)
+      const idToIndex = {}
+      ;(q.options || []).forEach((opt, idx) => { idToIndex[opt.id] = idx })
+      const correctIndices = (q.correct || [])
+        .map(id => idToIndex[id])
+        .filter(idx => typeof idx === 'number' && idx >= 0)
+      return {
+        id: q.id,
+        type: q.type,
+        text: q.text,
+        options: optionTexts,
+        correct: correctIndices,
+        weight: Math.round((q.weight || 1))
+      }
+    }),
     allowedJoinCodes: extras.allowedJoinCodes || [],
     answerViewPassword: extras.answerViewPassword || '',
     autoDeleteDays: quiz.autoDeleteAfterDays || 7

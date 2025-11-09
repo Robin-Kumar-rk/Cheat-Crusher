@@ -24,6 +24,8 @@ fun ResultScreen(
     viewModel: ResultViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    var answerPassword by remember { mutableStateOf("") }
+    var canViewAnswers by remember { mutableStateOf(false) }
     
     LaunchedEffect(responseId) {
         viewModel.loadResult(responseId)
@@ -164,9 +166,59 @@ fun ResultScreen(
                 }
             }
         }
-        
+
         Spacer(modifier = Modifier.height(24.dp))
-        
+
+        // Answer view password gate
+        uiState.quiz?.let { quiz ->
+            val raw = com.cheatcrusher.util.JoinCodeVerifier.parse(quiz.rawJson)
+            if (raw?.answerViewPassword != null) {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text("Answer View", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = answerPassword,
+                            onValueChange = { answerPassword = it },
+                            label = { Text("Enter password") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Button(onClick = { canViewAnswers = answerPassword == raw.answerViewPassword }) {
+                            Text("Unlock Answers")
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+        }
+
+        // Correct answers (shown only when unlocked)
+        if (canViewAnswers) {
+            uiState.quiz?.let { quiz ->
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text("Correct Answers", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        uiState.breakdown.forEach { item ->
+                            Column(modifier = Modifier.padding(bottom = 12.dp)) {
+                                Text(item.questionText, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+                                if (!item.isTextQuestion) {
+                                    Text("Correct: ${item.correctOptionTexts.joinToString(", ")}", style = MaterialTheme.typography.bodyMedium)
+                                    Text("Your answer: ${item.selectedOptionTexts.joinToString(", ")}", style = MaterialTheme.typography.bodyMedium)
+                                    Text("Marks: ${"%.1f".format(item.earnedMarks)} / ${"%.1f".format(item.maxMarks)}", style = MaterialTheme.typography.bodyMedium)
+                                } else {
+                                    Text("Text question — check manually", style = MaterialTheme.typography.bodyMedium)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+        }
+
         // Warnings (if any)
         uiState.response?.let { response ->
             if (response.flagged || response.disqualified || response.appSwitchEvents.isNotEmpty()) {

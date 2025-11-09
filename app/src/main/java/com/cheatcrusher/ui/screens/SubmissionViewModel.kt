@@ -6,6 +6,12 @@ import com.cheatcrusher.data.local.LocalDataRepository
 import com.cheatcrusher.data.local.OfflineRepository
 import com.cheatcrusher.data.local.LocalHistoryItem
 import com.cheatcrusher.data.local.PendingSubmission
+import androidx.work.WorkManager
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.Constraints
+import androidx.work.NetworkType
+import com.cheatcrusher.data.work.PendingUploadWorker
+import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -29,7 +35,8 @@ data class SubmissionUiState(
 @HiltViewModel
 class SubmissionViewModel @Inject constructor(
     private val localRepo: LocalDataRepository,
-    private val offlineRepo: OfflineRepository
+    private val offlineRepo: OfflineRepository,
+    @ApplicationContext private val context: android.content.Context
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(SubmissionUiState())
     val uiState: StateFlow<SubmissionUiState> = _uiState.asStateFlow()
@@ -68,6 +75,24 @@ class SubmissionViewModel @Inject constructor(
                 )
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(isLoading = false, error = e.message)
+            }
+        }
+    }
+
+    fun uploadAllPending() {
+        viewModelScope.launch {
+            try {
+                val constraints = Constraints.Builder()
+                    .setRequiredNetworkType(NetworkType.CONNECTED)
+                    .build()
+                val work = OneTimeWorkRequestBuilder<PendingUploadWorker>()
+                    .setConstraints(constraints)
+                    .build()
+                WorkManager.getInstance(context).enqueue(work)
+                // Optimistically refresh; worker updates and removes entries
+                refresh()
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(error = e.message)
             }
         }
     }

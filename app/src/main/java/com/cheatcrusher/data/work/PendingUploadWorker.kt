@@ -46,17 +46,28 @@ class PendingUploadWorker(
                         val answers: List<Answer> = gson.fromJson(item.answersJson, answersType)
                         val score = repo.calculateScore(quiz, answers)
 
-                        val updateResult = repo.updateResponse(
-                            responseId = item.responseId,
+                        // Build response and submit (create new doc)
+                        val studentInfoType = object : TypeToken<Map<String, String>>() {}.type
+                        val studentInfo: Map<String, String> = try { gson.fromJson(item.studentInfoJson, studentInfoType) } catch (_: Exception) { emptyMap() }
+                        val response = com.cheatcrusher.domain.Response(
+                            quizId = item.quizId,
+                            rollNumber = item.rollNumber,
+                            deviceId = studentInfo["deviceId"] ?: "",
+                            studentInfo = studentInfo,
                             answers = answers,
                             clientSubmittedAt = Timestamp.now(),
+                            serverUploadedAt = null,
                             score = score,
                             gradeStatus = GradeStatus.AUTO,
+                            appSwitchEvents = emptyList(),
+                            disqualified = false,
                             flagged = item.flagged
                         )
 
-                        updateResult.fold(
-                            onSuccess = {
+                        val submitResult = repo.submitResponse(response)
+
+                        submitResult.fold(
+                            onSuccess = { _ ->
                                 // Save local history if not already present, then delete pending
                                 try {
                                     val existingHistory = dao.getHistoryForQuizAndRoll(item.quizId, item.rollNumber)

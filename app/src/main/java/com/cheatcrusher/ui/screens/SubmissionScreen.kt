@@ -30,6 +30,12 @@ fun SubmissionScreen(
                 .padding(padding)
                 .padding(16.dp)
         ) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                Button(onClick = { viewModel.uploadAllPending() }) {
+                    Text("Upload Pending")
+                }
+            }
+            Spacer(modifier = Modifier.height(12.dp))
             if (uiState.isLoading) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator()
@@ -54,11 +60,17 @@ fun SubmissionScreen(
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text("Roll: ${item.rollNumber}", style = MaterialTheme.typography.bodySmall)
                             }
-                            Text(
-                                text = if (item.status == "submitted") "Submitted" else "Pending",
-                                color = if (item.status == "submitted") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary,
-                                style = MaterialTheme.typography.bodyMedium
-                            )
+                            if (item.status == "submitted") {
+                                Text(
+                                    text = "Submitted",
+                                    color = MaterialTheme.colorScheme.primary,
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                            } else {
+                                Button(onClick = { viewModel.uploadAllPending() }) {
+                                    Text("Upload")
+                                }
+                            }
                         }
                     }
                 }
