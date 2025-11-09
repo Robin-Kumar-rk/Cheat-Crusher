@@ -199,19 +199,10 @@ function DashboardPage() {
                     </Box>
 
                     <Box display="flex" alignItems="center" gap={1} mb={1}>
-                      <ScheduleIcon fontSize="small" color="action" />
                       <Typography variant="body2" color="text.secondary">
-                        Ends: {quiz.endsAt ? format(quiz.endsAt.toDate(), 'MMM dd, yyyy HH:mm') : 'Not set'}
+                        Timer: {quiz.timerMinutes || Math.round((quiz.durationSec || 0)/60)} min • Latency: {quiz.latencyMinutes || Math.round((quiz.allowLateUploadSec || 0)/60)} min
                       </Typography>
                     </Box>
-
-                    {quiz.startsAt && (
-                      <Box display="flex" alignItems="center" gap={1} mb={1}>
-                        <Typography variant="body2" color="text.secondary">
-                          Starts: {format(quiz.startsAt.toDate(), 'MMM dd, yyyy HH:mm')}
-                        </Typography>
-                      </Box>
-                    )}
                   </CardContent>
 
                   <CardActions>

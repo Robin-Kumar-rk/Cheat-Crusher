@@ -36,25 +36,17 @@ function CreateQuizPage() {
 
   const [quizData, setQuizData] = useState({
     title: '',
-    startsAt: new Date(),
-    endsAt: new Date(Date.now() + 2 * 60 * 60 * 1000), // 2 hours from now
-    durationSec: 3600, // 1 hour
-    allowLateUploadSec: 300, // 5 minutes
-    maxLateSec: 1800, // 30 minutes max late submission
-    allowJoinAfterStart: false,
     onAppSwitch: 'flag',
-    showResultsAt: new Date(Date.now() + 3 * 60 * 60 * 1000), // 3 hours from now
-    showAnswersWithMarks: false,
     shuffleQuestions: true,
     shuffleOptions: true,
     autoDeleteAfterDays: 7,
-    editableUntilStart: true,
     preJoinFields: [],
     questions: [],
-    // New spec extras
+    // New spec fields
+    timerMinutes: 60,
+    latencyMinutes: 15,
     allowedJoinCodes: [],
-    answerViewPassword: '',
-    latencyMinutes: 15
+    answerViewPassword: ''
   })
 
 
@@ -225,54 +217,30 @@ function CreateQuizPage() {
 
                   <Grid container spacing={2} sx={{ mt: 1 }}>
                     <Grid item xs={12} md={6}>
-                      <DateTimePicker
-                        label="Start Time"
-                        value={quizData.startsAt}
-                        onChange={(value) => handleInputChange('startsAt', value)}
-                        slotProps={{
-                          textField: {
-                            fullWidth: true
-                          }
-                        }}
+                      <TextField
+                        fullWidth
+                        label="Timer (minutes)"
+                        type="number"
+                        value={quizData.timerMinutes}
+                        onChange={(e) => handleInputChange('timerMinutes', parseInt(e.target.value || '0'))}
+                        margin="normal"
                       />
                     </Grid>
                     <Grid item xs={12} md={6}>
-                      <DateTimePicker
-                        label="End Time"
-                        value={quizData.endsAt}
-                        onChange={(value) => handleInputChange('endsAt', value)}
-                        slotProps={{
-                          textField: {
-                            fullWidth: true
-                          }
-                        }}
+                      <TextField
+                        fullWidth
+                        label="Latency (minutes)"
+                        type="number"
+                        value={quizData.latencyMinutes}
+                        onChange={(e) => handleInputChange('latencyMinutes', parseInt(e.target.value || '0'))}
+                        margin="normal"
+                        helperText="Join window length after start time"
                       />
                     </Grid>
                   </Grid>
 
                   <Grid container spacing={2} sx={{ mt: 1 }}>
-                    <Grid item xs={12} md={4}>
-                      <TextField
-                        fullWidth
-                        label="Late Upload Grace Period (seconds)"
-                        type="number"
-                        value={quizData.allowLateUploadSec}
-                        onChange={(e) => handleInputChange('allowLateUploadSec', parseInt(e.target.value))}
-                        margin="normal"
-                      />
-                    </Grid>
-                    <Grid item xs={12} md={4}>
-                      <TextField
-                        fullWidth
-                        label="Max Late Submission (seconds)"
-                        type="number"
-                        value={quizData.maxLateSec}
-                        onChange={(e) => handleInputChange('maxLateSec', parseInt(e.target.value))}
-                        margin="normal"
-                        helperText="Maximum time allowed for late submissions"
-                      />
-                    </Grid>
-                    <Grid item xs={12} md={4}>
+                    <Grid item xs={12} md={6}>
                       <TextField
                         fullWidth
                         label="Auto Delete After (days)"
@@ -354,6 +322,112 @@ function CreateQuizPage() {
               </Card>
             </Grid>
 
+            {/* Join Codes */}
+            <Grid item xs={12}>
+              <Card>
+                <CardContent>
+                  <Typography variant="h6" gutterBottom>
+                    Join Codes
+                  </Typography>
+                  <Alert severity="info" sx={{ mb: 2 }}>
+                    Add unlock passwords and allowed start times. Students will join using "password|startTime".
+                  </Alert>
+                  {(quizData.allowedJoinCodes || []).map((jc, idx) => (
+                    <Box key={idx} sx={{ mb: 2 }}>
+                      <Grid container spacing={2}>
+                        <Grid item xs={12} md={4}>
+                          <TextField
+                            fullWidth
+                            label="Unlock Password"
+                            value={jc.unlockPassword || ''}
+                            onChange={(e) => {
+                              const value = e.target.value
+                              setQuizData(prev => ({
+                                ...prev,
+                                allowedJoinCodes: prev.allowedJoinCodes.map((it, i) => i === idx ? { ...it, unlockPassword: value } : it)
+                              }))
+                            }}
+                          />
+                        </Grid>
+                        <Grid item xs={12} md={8}>
+                          <Typography variant="body2" sx={{ mb: 1 }}>Allowed Start Times</Typography>
+                          {(jc.allowedStartTimes || []).map((ts, tIdx) => (
+                            <Box key={tIdx} sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                              <DateTimePicker
+                                label={`Start ${tIdx + 1}`}
+                                value={ts ? new Date(ts) : new Date()}
+                                onChange={(value) => {
+                                  const iso = value?.toISOString() || ''
+                                  setQuizData(prev => ({
+                                    ...prev,
+                                    allowedJoinCodes: prev.allowedJoinCodes.map((it, i) => i === idx ? { ...it, allowedStartTimes: (it.allowedStartTimes || []).map((s, si) => si === tIdx ? iso : s) } : it)
+                                  }))
+                                }}
+                              />
+                              <IconButton onClick={() => {
+                                setQuizData(prev => ({
+                                  ...prev,
+                                  allowedJoinCodes: prev.allowedJoinCodes.map((it, i) => i === idx ? { ...it, allowedStartTimes: (it.allowedStartTimes || []).filter((_, si) => si !== tIdx) } : it)
+                                }))
+                              }}>
+                                <DeleteIcon />
+                              </IconButton>
+                            </Box>
+                          ))}
+                          <Button variant="outlined" onClick={() => {
+                            setQuizData(prev => ({
+                              ...prev,
+                              allowedJoinCodes: prev.allowedJoinCodes.map((it, i) => i === idx ? { ...it, allowedStartTimes: [ ...(it.allowedStartTimes || []), new Date().toISOString() ] } : it)
+                            }))
+                          }}>Add Start Time</Button>
+                        </Grid>
+                      </Grid>
+                      <Box sx={{ mt: 1 }}>
+                        <Button color="error" onClick={() => {
+                          setQuizData(prev => ({
+                            ...prev,
+                            allowedJoinCodes: prev.allowedJoinCodes.filter((_, i) => i !== idx)
+                          }))
+                        }}>Remove Join Code</Button>
+                      </Box>
+                      <Divider sx={{ my: 2 }} />
+                    </Box>
+                  ))}
+                  <Box sx={{ display: 'flex', gap: 2 }}>
+                    <Button variant="outlined" startIcon={<AddIcon />} onClick={() => {
+                      setQuizData(prev => ({
+                        ...prev,
+                        allowedJoinCodes: [ ...(prev.allowedJoinCodes || []), { unlockPassword: '', allowedStartTimes: [] } ]
+                      }))
+                    }}>Add Join Code</Button>
+                  </Box>
+                </CardContent>
+              </Card>
+            </Grid>
+
+            {/* Answer View Password */}
+            <Grid item xs={12}>
+              <Card>
+                <CardContent>
+                  <Typography variant="h6" gutterBottom>
+                    Answer View Password
+                  </Typography>
+                  <Box sx={{ display: 'flex', gap: 2 }}>
+                    <TextField
+                      fullWidth
+                      label="Password"
+                      value={quizData.answerViewPassword}
+                      onChange={(e) => handleInputChange('answerViewPassword', e.target.value)}
+                    />
+                    <Button variant="outlined" onClick={() => {
+                      const rand = Math.random().toString(36).substring(2, 8).toUpperCase()
+                      handleInputChange('answerViewPassword', `ANS-${rand}`)
+                    }}>Generate</Button>
+                  </Box>
+                </CardContent>
+              </Card>
+            </Grid>
+
             {/* Settings */}
             <Grid item xs={12}>
               <Card>
@@ -374,17 +448,7 @@ function CreateQuizPage() {
                     </RadioGroup>
                   </FormControl>
 
-                  <Box sx={{ mt: 2 }}>
-                    <FormControlLabel
-                      control={
-                        <Switch
-                          checked={quizData.allowJoinAfterStart}
-                          onChange={(e) => handleInputChange('allowJoinAfterStart', e.target.checked)}
-                        />
-                      }
-                      label="Allow joining after quiz starts"
-                    />
-                  </Box>
+                  {/* Removed legacy start settings per new flow */}
 
                   <Box sx={{ mt: 1 }}>
                     <FormControlLabel
@@ -410,35 +474,7 @@ function CreateQuizPage() {
                     />
                   </Box>
 
-                  <Divider sx={{ my: 3 }} />
-
-                  {/* Result Declaration Settings */}
-                  <Typography variant="subtitle1" gutterBottom>
-                    Result Declaration Settings
-                  </Typography>
-
-                  <Grid container spacing={2} sx={{ mt: 1 }}>
-                    <Grid item xs={12} md={6}>
-                      <DateTimePicker
-                        label="Show Results At"
-                        value={quizData.showResultsAt}
-                        onChange={(value) => handleInputChange('showResultsAt', value)}
-                        renderInput={(params) => <TextField {...params} fullWidth margin="normal" />}
-                      />
-                    </Grid>
-                  </Grid>
-
-                  <Box sx={{ mt: 2 }}>
-                    <FormControlLabel
-                      control={
-                        <Switch
-                          checked={quizData.showAnswersWithMarks}
-                          onChange={(e) => handleInputChange('showAnswersWithMarks', e.target.checked)}
-                        />
-                      }
-                      label="Show correct answers with marks"
-                    />
-                  </Box>
+                  {/* Answer view is gated by password; results are always computed locally */}
                 </CardContent>
               </Card>
             </Grid>

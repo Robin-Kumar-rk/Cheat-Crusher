@@ -24,6 +24,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 @Composable
 fun HomeScreen(
     onJoinQuiz: () -> Unit,
+    onDownloadQuiz: () -> Unit,
     viewModel: HomeViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -67,11 +68,10 @@ fun HomeScreen(
                 )
                 Spacer(modifier = Modifier.height(16.dp))
                 Column {
-                    Text("Enter Quiz Code", style = MaterialTheme.typography.titleMedium, color = Color.White)
+                    Text("Enter Download Code", style = MaterialTheme.typography.titleMedium, color = Color.White)
                     Spacer(modifier = Modifier.height(8.dp))
-                    // Keep navigation behavior to Join screen where code entry exists
                     Button(
-                        onClick = onJoinQuiz,
+                        onClick = onDownloadQuiz,
                         colors = ButtonDefaults.buttonColors(
                             containerColor = Color.White,
                             contentColor = MaterialTheme.colorScheme.primary
@@ -79,7 +79,7 @@ fun HomeScreen(
                     ) {
                         Icon(Icons.Default.PlayArrow, contentDescription = null)
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Join a Quiz")
+                        Text("Download Quiz")
                     }
                 }
             }
@@ -130,9 +130,9 @@ fun HomeScreen(
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "• Enter the 6-character quiz code provided by your teacher\n" +
-                          "• Fill in your roll number and any requested details\n" +
-                          "• Ensure a stable internet connection\n" +
+                    text = "• Enter the 6-character download code provided by your teacher\n" +
+                          "• After download, fill your details and enter join code when asked\n" +
+                          "• Ensure a stable internet connection for the initial download and upload\n" +
                           "• Do not switch apps during the quiz",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant

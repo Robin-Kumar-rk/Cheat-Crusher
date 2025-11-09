@@ -40,31 +40,30 @@ class JoinQuizViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
             try {
-                firestoreRepository.getQuizByCode(normalizedCode).fold(
-                    onSuccess = { quiz ->
-                        // Cache quiz offline with time integrity guard
-                        viewModelScope.launch {
-                            val cachedOk = offlineRepository.cacheQuiz(quiz, normalizedCode)
-                            if (!cachedOk) {
+                // New offline-first path: fetch rawJson by download code, cache, and parse
+                firestoreRepository.getQuizRawByDownloadCode(normalizedCode).fold(
+                    onSuccess = { (docId, rawJson) ->
+                        val ok = offlineRepository.cacheRawQuizFromDownload(docId, normalizedCode, rawJson)
+                        if (!ok) {
+                            _uiState.value = _uiState.value.copy(
+                                isLoading = false,
+                                error = "Failed to cache quiz for offline use"
+                            )
+                        } else {
+                            val cached = offlineRepository.getCachedQuizById(docId)
+                            val parsed = cached?.let { offlineRepository.parseCachedQuiz(it) }
+                            if (parsed != null) {
                                 _uiState.value = _uiState.value.copy(
+                                    quiz = parsed,
+                                    joinedQuizId = parsed.id,
                                     isLoading = false,
-                                    error = "Automatic network time is disabled. Enable auto date & time, then re-download the quiz."
+                                    error = null
                                 )
                             } else {
-                                // Enforce start window at client even if server rules are loose
-                                if (!firestoreRepository.canJoinQuiz(quiz)) {
-                                    _uiState.value = _uiState.value.copy(
-                                        quiz = quiz,
-                                        isLoading = false,
-                                        error = "Quiz not started yet. It’s downloaded for offline and will unlock at the start time."
-                                    )
-                                } else {
-                                    _uiState.value = _uiState.value.copy(
-                                        quiz = quiz,
-                                        joinedQuizId = quiz.id,
-                                        isLoading = false
-                                    )
-                                }
+                                _uiState.value = _uiState.value.copy(
+                                    isLoading = false,
+                                    error = "Failed to parse downloaded quiz"
+                                )
                             }
                         }
                     },
@@ -84,11 +83,8 @@ class JoinQuizViewModel @Inject constructor(
         }
     }
     
-    private fun canJoinQuiz(quiz: Quiz): Boolean {
-        val now = Timestamp.now()
-        // Match Firestore rules: joining is only allowed while active window.
-        return now >= quiz.startsAt && now <= quiz.endsAt
-    }
+    // Removed server-based join window check; join is gated offline by allowedJoinCodes
+    private fun canJoinQuiz(quiz: Quiz): Boolean = true
     
     fun clearError() {
         _uiState.value = _uiState.value.copy(error = null)

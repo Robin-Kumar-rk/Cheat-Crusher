@@ -185,26 +185,18 @@ function QuizDetailsPage() {
               <Grid container spacing={2}>
                 <Grid item xs={12} sm={6}>
                   <Typography variant="body2" color="text.secondary">
-                    Start Time
+                    Timer
                   </Typography>
                   <Typography variant="body1">
-                    {quiz.startsAt ? format(quiz.startsAt.toDate(), 'MMM dd, yyyy HH:mm') : 'Not set'}
+                    {quiz.timerMinutes || Math.round((quiz.durationSec || 0)/60)} minutes
                   </Typography>
                 </Grid>
                 <Grid item xs={12} sm={6}>
                   <Typography variant="body2" color="text.secondary">
-                    End Time
+                    Latency
                   </Typography>
                   <Typography variant="body1">
-                    {quiz.endsAt ? format(quiz.endsAt.toDate(), 'MMM dd, yyyy HH:mm') : 'Not set'}
-                  </Typography>
-                </Grid>
-                <Grid item xs={12} sm={6}>
-                  <Typography variant="body2" color="text.secondary">
-                    Ends At
-                  </Typography>
-                  <Typography variant="body1">
-                    {quiz.endsAt ? format(quiz.endsAt.toDate(), 'MMM dd, yyyy HH:mm') : 'Not set'}
+                    {quiz.latencyMinutes || Math.round((quiz.allowLateUploadSec || 0)/60)} minutes
                   </Typography>
                 </Grid>
                 <Grid item xs={12} sm={6}>

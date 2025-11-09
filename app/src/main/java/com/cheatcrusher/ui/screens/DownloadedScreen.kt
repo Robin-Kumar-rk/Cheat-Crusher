@@ -58,11 +58,10 @@ fun DownloadedScreen(
                             Spacer(modifier = Modifier.height(4.dp))
                             Text("Code: ${item.cached.quizCode}", style = MaterialTheme.typography.bodySmall)
                             Spacer(modifier = Modifier.height(8.dp))
-                            when {
-                                item.secondsUntilStart > 0 -> Text("Starts in ${item.secondsUntilStart}s", style = MaterialTheme.typography.bodyMedium)
-                                item.isAttempted -> Text("Attempted", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
-                                item.isActive -> Button(onClick = { onEnterOffline(item.cached.quizId) }) { Text("Enter") }
-                                else -> Text("Expired", color = MaterialTheme.colorScheme.error)
+                            if (item.isAttempted) {
+                                Text("Attempted", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+                            } else {
+                                Button(onClick = { onEnterOffline(item.cached.quizId) }) { Text("Enter") }
                             }
                         }
                     }

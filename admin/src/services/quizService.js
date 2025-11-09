@@ -67,8 +67,8 @@ const buildRawJsonString = (quiz, extras = {}) => {
     title: quiz.title || '',
     description: quiz.description || '',
     downloadCode: extras.downloadCode || quiz.downloadCode || '',
-    latencyMinutes: extras.latencyMinutes ?? Math.round((quiz.allowLateUploadSec || 0) / 60),
-    timerMinutes: Math.round((quiz.durationSec || 0) / 60),
+    latencyMinutes: extras.latencyMinutes ?? quiz.latencyMinutes ?? 0,
+    timerMinutes: extras.timerMinutes ?? quiz.timerMinutes ?? 60,
     preForm: {
       fields: (quiz.preJoinFields || []).map(f => ({ key: f.id || f.key || '', label: f.label || '', required: !!f.required }))
     },
@@ -114,7 +114,8 @@ export const createQuiz = async (quizData, creatorId) => {
       downloadCode,
       allowedJoinCodes: quizData.allowedJoinCodes || [],
       answerViewPassword: quizData.answerViewPassword || '',
-      latencyMinutes: quizData.latencyMinutes
+      latencyMinutes: quizData.latencyMinutes,
+      timerMinutes: quizData.timerMinutes
     })
     await updateDoc(doc(db, 'quizzes', docRef.id), { rawJson })
     return { id: docRef.id, ...quiz, rawJson }
@@ -200,7 +201,8 @@ export const updateQuiz = async (quizId, updates) => {
       downloadCode: data.downloadCode,
       allowedJoinCodes: updates.allowedJoinCodes || data.allowedJoinCodes || [],
       answerViewPassword: updates.answerViewPassword || data.answerViewPassword || '',
-      latencyMinutes: updates.latencyMinutes
+      latencyMinutes: updates.latencyMinutes,
+      timerMinutes: updates.timerMinutes || data.timerMinutes
     })
     await updateDoc(docRef, { rawJson })
     return true

@@ -67,55 +67,25 @@ class QuizViewModel @Inject constructor(
             currentRollNumber = normalizedRoll
             
             try {
-                // Block activation if automatic network time is disabled
-                if (!TimeIntegrity.isAutoTimeEnabled(context)) {
-                    _uiState.value = _uiState.value.copy(
-                        isLoading = false,
-                        error = "Automatic network time is disabled. Quiz cannot be activated on this device. Enable auto date & time and re-download."
-                    )
+                // Offline-first: load cached quiz and parse
+                val cached = offlineRepository.getCachedQuizById(quizId)
+                val quiz = cached?.let { offlineRepository.parseCachedQuiz(it) }
+                if (quiz == null) {
+                    _uiState.value = _uiState.value.copy(isLoading = false, error = "Quiz not downloaded. Enter download code first.")
                     return@launch
                 }
-                // First, block retakes: check existing response for this quiz by roll OR device
-                val deviceId = try { deviceUtils.getDeviceId() } catch (e: Exception) { "" }
-                val byRoll = firestoreRepository.getResponseByQuizAndRoll(quizId, normalizedRoll)
-                val byDevice = if (deviceId.isNotBlank()) firestoreRepository.getResponseByQuizAndDeviceId(quizId, deviceId) else Result.failure(Exception("No device id"))
-                if (byRoll.isSuccess || byDevice.isSuccess) {
-                    _uiState.value = _uiState.value.copy(
-                        isLoading = false,
-                        error = "You have already attempted this quiz. Retakes are not allowed."
-                    )
-                    return@launch
-                }
-                
-                firestoreRepository.getQuizById(quizId).fold(
-                    onSuccess = { quiz ->
-                        // Shuffle questions and options per roll number (anonymous flow)
-                        val shuffledQuestions = firestoreRepository.shuffleQuestionsForJoin(quiz, normalizedRoll)
-                            .map { question ->
-                                firestoreRepository.shuffleOptionsForJoin(question, quiz, normalizedRoll)
-                            }
-                        
-                        val remaining = (quiz.durationSec).coerceAtLeast(0)
-                        _uiState.value = _uiState.value.copy(
-                            quiz = quiz,
-                            shuffledQuestions = shuffledQuestions,
-                            timeRemainingSeconds = remaining,
-                            isLoading = false
-                        )
-                        
-                        // Start timer
-                        startTimer()
-                        
-                        // Initialize a local response id for offline-first flow
-                        currentResponseId = java.util.UUID.randomUUID().toString()
-                    },
-                    onFailure = { exception ->
-                        _uiState.value = _uiState.value.copy(
-                            isLoading = false,
-                            error = exception.message ?: "Failed to load quiz"
-                        )
-                    }
+
+                val shuffledQuestions = firestoreRepository.shuffleQuestionsForJoin(quiz, normalizedRoll)
+                    .map { question -> firestoreRepository.shuffleOptionsForJoin(question, quiz, normalizedRoll) }
+                val remaining = (quiz.durationSec).coerceAtLeast(0)
+                _uiState.value = _uiState.value.copy(
+                    quiz = quiz,
+                    shuffledQuestions = shuffledQuestions,
+                    timeRemainingSeconds = remaining,
+                    isLoading = false
                 )
+                startTimer()
+                currentResponseId = java.util.UUID.randomUUID().toString()
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
@@ -235,7 +205,7 @@ class QuizViewModel @Inject constructor(
                 val response = Response(
                     id = localResponseId,
                     quizId = quiz.id,
-                    rollNumber = normalizedRoll,
+                    rollNumber = currentRollNumber ?: "",
                     deviceId = deviceId,
                     studentInfo = emptyMap(),
                     answers = answers,

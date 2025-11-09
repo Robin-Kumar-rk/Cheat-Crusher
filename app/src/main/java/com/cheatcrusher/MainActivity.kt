@@ -88,7 +88,10 @@ class MainActivity : ComponentActivity() {
                             modifier = Modifier.padding(paddingValues)
                         ) {
                             composable("home") {
-                                HomeScreen(onJoinQuiz = { navController.navigate("join") })
+                                HomeScreen(
+                                    onJoinQuiz = { navController.navigate("join") },
+                                    onDownloadQuiz = { navController.navigate("download") }
+                                )
                             }
                             composable("downloaded") {
                                 DownloadedScreen(
@@ -162,3 +165,14 @@ class MainActivity : ComponentActivity() {
         }
     }
 }
+                            composable("download") {
+                                DownloadQuizScreen(
+                                    onDownloaded = { quizId -> navController.navigate("preform/$quizId") },
+                                    onBack = {
+                                        navController.navigate("home") {
+                                            popUpTo("home") { inclusive = true }
+                                            launchSingleTop = true
+                                        }
+                                    }
+                                )
+                            }

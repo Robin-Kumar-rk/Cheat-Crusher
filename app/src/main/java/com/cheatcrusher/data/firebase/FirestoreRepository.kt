@@ -53,6 +53,28 @@ class FirestoreRepository @Inject constructor(
             }
         }
     }
+
+    /**
+     * Get raw JSON and doc id by download code
+     */
+    suspend fun getQuizRawByDownloadCode(code: String): Result<Pair<String, String>> {
+        return try {
+            val querySnapshot = firestore.collection("quizzes")
+                .whereEqualTo("downloadCode", code.uppercase())
+                .limit(1)
+                .get()
+                .await()
+            if (querySnapshot.isEmpty) {
+                Result.failure(Exception("Quiz not found with download code: $code"))
+            } else {
+                val doc = querySnapshot.documents.first()
+                val raw = (doc.get("rawJson") as? String) ?: ""
+                Result.success(Pair(doc.id, raw))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
     
     /**
      * Get quiz by ID

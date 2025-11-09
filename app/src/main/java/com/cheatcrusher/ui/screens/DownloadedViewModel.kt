@@ -44,16 +44,8 @@ class DownloadedViewModel @Inject constructor(
                 val pending = offlineRepository.listPendingSubmissions()
                 val attemptedIds = (history.map { it.quizId } + pending.map { it.quizId }).toSet()
                 val items = cached.map { c ->
-                    val snapshot = TimeSnapshot(
-                        startsAtMillis = c.startsAtMillis,
-                        endsAtMillis = c.endsAtMillis,
-                        downloadedAtElapsedRealtime = c.downloadedAtElapsedRealtime
-                    )
-                    val now = TimeIntegrity.estimateServerNow(snapshot)
-                    val secondsUntilStart = ((c.startsAtMillis - now) / 1000L).coerceAtLeast(0L)
-                    val isActive = TimeIntegrity.isActiveNow(snapshot)
                     val isAttempted = attemptedIds.contains(c.quizId)
-                    DownloadedItem(cached = c, secondsUntilStart = secondsUntilStart, isActive = isActive, isAttempted = isAttempted)
+                    DownloadedItem(cached = c, secondsUntilStart = 0L, isActive = true, isAttempted = isAttempted)
                 }
                 _uiState.value = DownloadedUiState(items = items, isLoading = false)
             } catch (e: Exception) {

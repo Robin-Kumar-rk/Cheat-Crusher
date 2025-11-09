@@ -15,27 +15,17 @@ class OfflineRepository @Inject constructor(
     private val dao = db.localDao()
     private val gson = com.google.gson.Gson()
 
-    suspend fun cacheQuiz(quiz: Quiz, code: String) : Boolean {
-        // Require automatic network time to prevent clock tampering
-        if (!TimeIntegrity.isAutoTimeEnabled(context)) {
-            // Mark any cached instance as invalid to force re-download later
-            dao.invalidateCachedQuiz(quiz.id)
-            return false
-        }
-
-        val startsAtMillis = quiz.startsAt.toDate().time
-        val endsAtMillis = quiz.endsAt.toDate().time
-        val snapshot = TimeIntegrity.createSnapshot(startsAtMillis, endsAtMillis)
-
+    // New: cache raw JSON quiz by download code (offline-first, no network time requirement)
+    suspend fun cacheRawQuizFromDownload(quizId: String, code: String, rawJson: String, title: String? = null): Boolean {
         val cached = CachedQuiz(
-            quizId = quiz.id,
+            quizId = quizId,
             quizCode = code.uppercase(),
-            title = quiz.title,
-            metadataJson = gson.toJson(quiz),
-            startsAtMillis = startsAtMillis,
-            endsAtMillis = endsAtMillis,
-            downloadedAtElapsedRealtime = snapshot.downloadedAtElapsedRealtime,
-            requiresNetworkTime = true,
+            title = title ?: (try { com.cheatcrusher.util.JoinCodeVerifier.parse(rawJson)?.title ?: "" } catch (_: Exception) { "" }),
+            metadataJson = rawJson,
+            startsAtMillis = 0L,
+            endsAtMillis = 0L,
+            downloadedAtElapsedRealtime = android.os.SystemClock.elapsedRealtime(),
+            requiresNetworkTime = false,
             invalidated = false
         )
         dao.upsertCachedQuiz(cached)
@@ -51,6 +41,48 @@ class OfflineRepository @Inject constructor(
     }
 
     fun parseCachedQuiz(cached: CachedQuiz): com.cheatcrusher.domain.Quiz? {
+        // Try rawJson first
+        try {
+            val raw = com.cheatcrusher.util.JoinCodeVerifier.parse(cached.metadataJson)
+            if (raw != null) {
+                // Build domain Quiz from raw
+                val durationSec = (raw.timerMinutes ?: 0) * 60
+                val fields = raw.preForm?.fields?.map { f -> com.cheatcrusher.domain.FormField(id = f.key, label = f.label, type = "text", required = f.required) } ?: emptyList()
+                val questions = raw.questions.map { rq ->
+                    val opts = rq.options.mapIndexed { idx, text -> com.cheatcrusher.domain.QuestionOption(id = "opt_$idx", text = text) }
+                    val correctIds = rq.correct.map { idx -> "opt_$idx" }
+                    com.cheatcrusher.domain.Question(
+                        id = rq.id,
+                        type = when (rq.type.uppercase()) { "MSQ" -> com.cheatcrusher.domain.QuestionType.MSQ; "TEXT" -> com.cheatcrusher.domain.QuestionType.TEXT; else -> com.cheatcrusher.domain.QuestionType.MCQ },
+                        text = rq.text,
+                        options = opts,
+                        correct = correctIds,
+                        weight = (rq.weight ?: 1).toDouble()
+                    )
+                }
+                return com.cheatcrusher.domain.Quiz(
+                    id = raw.quizId ?: cached.quizId,
+                    title = raw.title ?: cached.title,
+                    code = cached.quizCode,
+                    downloadCode = cached.quizCode,
+                    creatorId = "",
+                    durationSec = durationSec,
+                    allowLateUploadSec = (raw.latencyMinutes ?: 0) * 60,
+                    allowJoinAfterStart = false,
+                    maxLateSec = 0,
+                    onAppSwitchString = "flag",
+                    showAnswersWithMarks = false,
+                    shuffleQuestions = false,
+                    shuffleOptions = false,
+                    autoDeleteAfterDays = raw.autoDeleteDays ?: 7,
+                    preJoinFields = fields,
+                    questions = questions,
+                    editableUntilStart = true,
+                    rawJson = cached.metadataJson
+                )
+            }
+        } catch (_: Exception) { /* fall through */ }
+        // Fallback to legacy domain-serialized quiz
         return try { gson.fromJson(cached.metadataJson, com.cheatcrusher.domain.Quiz::class.java) } catch (_: Exception) { null }
     }
 
