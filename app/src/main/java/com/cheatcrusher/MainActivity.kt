@@ -114,7 +114,8 @@ class MainActivity : ComponentActivity() {
                                 PreQuizFormScreen(
                                     quizId = quizId,
                                     onStartQuiz = { roll, infoJson ->
-                                        navController.navigate("quiz/$quizId/$roll/$infoJson")
+                                        val encoded = android.net.Uri.encode(infoJson)
+                                        navController.navigate("quiz/$quizId/$roll/$encoded")
                                     },
                                     onBack = {
                                         navController.navigate("home") {

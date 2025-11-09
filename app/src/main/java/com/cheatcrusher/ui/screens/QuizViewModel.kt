@@ -89,22 +89,13 @@ class QuizViewModel @Inject constructor(
                 
                 firestoreRepository.getQuizById(quizId).fold(
                     onSuccess = { quiz ->
-                        // Block starting if quiz not active yet
-                        if (!firestoreRepository.canJoinQuiz(quiz)) {
-                            _uiState.value = _uiState.value.copy(
-                                isLoading = false,
-                                error = "Quiz not started yet. Please wait until the scheduled start time."
-                            )
-                            return@fold
-                        }
                         // Shuffle questions and options per roll number (anonymous flow)
                         val shuffledQuestions = firestoreRepository.shuffleQuestionsForJoin(quiz, normalizedRoll)
                             .map { question ->
                                 firestoreRepository.shuffleOptionsForJoin(question, quiz, normalizedRoll)
                             }
                         
-                        val now = Timestamp.now()
-                        val remaining = ((quiz.endsAt.seconds - now.seconds).coerceAtLeast(0)).toInt()
+                        val remaining = (quiz.durationSec).coerceAtLeast(0)
                         _uiState.value = _uiState.value.copy(
                             quiz = quiz,
                             shuffledQuestions = shuffledQuestions,
@@ -115,8 +106,8 @@ class QuizViewModel @Inject constructor(
                         // Start timer
                         startTimer()
                         
-                        // Create initial response document with deviceId
-                        createInitialResponse(quiz, normalizedRoll, studentInfo)
+                        // Initialize a local response id for offline-first flow
+                        currentResponseId = java.util.UUID.randomUUID().toString()
                     },
                     onFailure = { exception ->
                         _uiState.value = _uiState.value.copy(
@@ -233,22 +224,31 @@ class QuizViewModel @Inject constructor(
                 }
 
                 val quiz = _uiState.value.quiz ?: return@launch
-                val responseId = currentResponseId ?: return@launch
+                val localResponseId = currentResponseId ?: java.util.UUID.randomUUID().toString()
                 
                 // Calculate score
                 val answers = _uiState.value.answers.values.toList()
                 val score = firestoreRepository.calculateScore(quiz, answers)
                 
-                // Update the existing response instead of creating a new one
-                firestoreRepository.updateResponse(
-                    responseId = responseId,
+                // Attempt to upload final response (offline-first: create on submit)
+                val deviceId = try { deviceUtils.getDeviceId() } catch (e: Exception) { "" }
+                val response = Response(
+                    id = localResponseId,
+                    quizId = quiz.id,
+                    rollNumber = normalizedRoll,
+                    deviceId = deviceId,
+                    studentInfo = emptyMap(),
                     answers = answers,
                     clientSubmittedAt = Timestamp.now(),
+                    serverUploadedAt = null,
                     score = score,
                     gradeStatus = GradeStatus.AUTO,
+                    appSwitchEvents = emptyList(),
+                    disqualified = _uiState.value.isDisqualified,
                     flagged = _uiState.value.isFlagged
-                ).fold(
-                    onSuccess = {
+                )
+                firestoreRepository.submitResponse(response).fold(
+                    onSuccess = { responseId ->
                         _uiState.value = _uiState.value.copy(
                             isSubmitted = true,
                             submittedResponseId = responseId,
@@ -278,7 +278,7 @@ class QuizViewModel @Inject constructor(
                             val studentInfoJson = "{}" // not needed for update
                             val roll = currentRollNumber ?: ""
                             offlineRepository.savePendingSubmission(
-                                responseId = responseId,
+                                responseId = localResponseId,
                                 quizId = quiz.id,
                                 rollNumber = roll,
                                 studentInfoJson = studentInfoJson,
@@ -297,7 +297,7 @@ class QuizViewModel @Inject constructor(
 
                             _uiState.value = _uiState.value.copy(
                                 isSubmitted = true,
-                                submittedResponseId = responseId,
+                                submittedResponseId = localResponseId,
                                 error = null,
                                 isPendingUpload = true
                             )

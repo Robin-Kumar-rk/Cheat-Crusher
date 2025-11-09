@@ -71,7 +71,8 @@ fun QuizScreen(
     LaunchedEffect(quizId, rollNumber, studentInfoJson) {
         val infoMap = try {
             if (studentInfoJson.isNotBlank()) {
-                val decoded = android.util.Base64.decode(studentInfoJson, android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP)
+                val decodedParam = android.net.Uri.decode(studentInfoJson)
+                val decoded = android.util.Base64.decode(decodedParam, android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP)
                 val json = String(decoded)
                 // Very simple JSON parsing into map: expects {"key":"value",...}
                 json.trim()
