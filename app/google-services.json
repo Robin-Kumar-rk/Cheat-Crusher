@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "163159665793",
+    "project_id": "cheat-crusher",
+    "storage_bucket": "cheat-crusher.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:163159665793:android:55f8e79f60d770c3467180",
+        "android_client_info": {
+          "package_name": "com.cheatcrusher"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCeoRwg_o1ygtI_dVXAMbBeyNnZBXczQQs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
